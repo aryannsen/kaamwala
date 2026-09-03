@@ -45,6 +45,29 @@ export interface SupabaseServiceOptionRow {
   created_at?: string | null;
 }
 
+export interface SupabaseCustomerAddressRow {
+  id?: string;
+  customer_id?: string;
+  label?: string;
+  address: string;
+  locality?: string | null;
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+  latitude: number;
+  longitude: number;
+  is_default?: boolean;
+  created_at?: string;
+}
+
+export interface SupabaseCustomerRow {
+  id: string;
+  name?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  created_at?: string;
+}
+
 export type CatalogDataSource = 'supabase' | 'development_fallback';
 
 export interface CatalogState<T> {

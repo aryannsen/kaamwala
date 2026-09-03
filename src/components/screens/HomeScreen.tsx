@@ -1,12 +1,12 @@
 import React from 'react';
 import { MapPin, AlertCircle, RefreshCw, ShieldCheck } from 'lucide-react';
-import { LocationArea, ServiceCategory } from '../../types';
+import { LocationArea, CustomerLocation, ServiceCategory } from '../../types';
 import { TrustRow } from '../common/Illustrations';
 import { renderCategoryIcon } from '../../lib/iconMap';
 import { formatPricingDisplay } from '../../services/catalogService';
 
 interface HomeScreenProps {
-  selectedLocation: LocationArea;
+  selectedLocation?: LocationArea | CustomerLocation | null;
   onOpenLocationModal: () => void;
   categories: ServiceCategory[];
   onSelectCategory: (category: ServiceCategory) => void;
@@ -29,7 +29,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const safeCategories = Array.isArray(categories) ? categories : [];
   // Requirement 8: Show the first 6 active categories according to display_order
   const popularCategories = safeCategories.slice(0, 6);
-  const locationName = selectedLocation?.name || 'Fuwara Chowk';
+  const displayLocation = selectedLocation
+    ? 'formattedAddress' in selectedLocation
+      ? selectedLocation.locality || selectedLocation.city || selectedLocation.formattedAddress.split(',')[0]
+      : selectedLocation.name
+    : null;
 
   return (
     <div className="pb-24 animate-in fade-in duration-150">
@@ -47,9 +51,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         {/* Location Selector Bar */}
         <div className="mt-4 p-3 bg-white border border-[#E7E9E6] rounded-xl flex items-center justify-between shadow-2xs">
           <div className="flex items-center gap-2.5 overflow-hidden">
-            <MapPin className="w-4 h-4 text-[#075B43] shrink-0" />
+            <MapPin className={`w-4 h-4 shrink-0 ${displayLocation ? 'text-[#075B43]' : 'text-gray-400'}`} />
             <span className="text-sm font-semibold text-[#111817] truncate">
-              {locationName}, Kadi
+              {displayLocation ? `${displayLocation}` : 'Select your location'}
             </span>
           </div>
           <button
@@ -57,7 +61,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             onClick={onOpenLocationModal}
             className="text-xs font-bold text-[#075B43] hover:underline shrink-0 ml-2"
           >
-            Change
+            {displayLocation ? 'Change' : 'Set Location'}
           </button>
         </div>
 

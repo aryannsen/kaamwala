@@ -233,7 +233,7 @@ export const dataService = {
     return [...KADI_LOCALITIES];
   },
 
-  getSelectedLocation(): LocationArea {
+  getSelectedLocation(): LocationArea | null {
     try {
       const raw = safeStorage.getItem(STORAGE_KEYS.CURRENT_LOCATION);
       if (raw) {
@@ -243,13 +243,15 @@ export const dataService = {
         }
       }
     } catch {}
-    return KADI_LOCALITIES[0]; // Fuwara Chowk, Kadi
+    return null;
   },
 
-  setSelectedLocation(loc: LocationArea) {
+  setSelectedLocation(loc: LocationArea | null) {
     try {
       if (loc && loc.name) {
         safeStorage.setItem(STORAGE_KEYS.CURRENT_LOCATION, JSON.stringify(loc));
+      } else {
+        safeStorage.removeItem(STORAGE_KEYS.CURRENT_LOCATION);
       }
     } catch {}
   },

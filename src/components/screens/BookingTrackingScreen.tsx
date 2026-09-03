@@ -132,7 +132,7 @@ export const BookingTrackingScreen: React.FC<BookingTrackingScreenProps> = ({
 
         {/* Location notes on map */}
         <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-xs px-2 py-1 rounded text-[10px] font-semibold text-gray-700 shadow-2xs">
-          📍 Fuwara Chowk → Swastik Society
+          📍 En Route → {booking.address ? booking.address.split(',')[0] : 'Service Location'}
         </div>
       </div>
 

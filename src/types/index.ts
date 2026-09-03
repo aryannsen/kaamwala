@@ -63,7 +63,23 @@ export interface LocationArea {
   isPopular?: boolean;
 }
 
+export type LocationSource = 'gps' | 'search' | 'map';
+
+export interface CustomerLocation {
+  latitude: number;
+  longitude: number;
+  formattedAddress: string;
+  locality?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  source: LocationSource;
+  confirmedAt?: string;
+  label?: string;
+}
+
 export interface CustomerProfile {
+  id?: string;
   name: string;
   phone: string;
   address: string;
@@ -71,6 +87,12 @@ export interface CustomerProfile {
     id: string;
     label: string;
     address: string;
+    locality?: string;
+    city?: string;
+    state?: string;
+    pincode?: string;
+    latitude?: number;
+    longitude?: number;
     isDefault: boolean;
   }[];
 }

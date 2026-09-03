@@ -1,9 +1,9 @@
 import React from 'react';
 import { MapPin, ShieldCheck, Star, Clock, CheckCircle } from 'lucide-react';
-import { LocationArea, Professional, ServiceOption } from '../../types';
+import { LocationArea, CustomerLocation, Professional, ServiceOption } from '../../types';
 
 interface ProfessionalMatchingScreenProps {
-  location: LocationArea;
+  location?: LocationArea | CustomerLocation | null;
   onOpenLocationModal: () => void;
   serviceOption: ServiceOption;
   professionals: Professional[];
@@ -17,16 +17,22 @@ export const ProfessionalMatchingScreen: React.FC<ProfessionalMatchingScreenProp
   professionals,
   onSelectProfessional
 }) => {
+  const displayLocation = location
+    ? 'formattedAddress' in location
+      ? location.locality || location.city || location.formattedAddress.split(',')[0]
+      : location.name
+    : null;
+
   return (
     <div className="pb-24 animate-in fade-in duration-150 px-5 pt-2">
       {/* Location Bar */}
       <div className="p-3 bg-white border border-[#E7E9E6] rounded-xl flex items-center justify-between shadow-2xs mb-4">
         <div className="flex items-center gap-2 overflow-hidden">
-          <MapPin className="w-4 h-4 text-[#075B43] shrink-0" />
+          <MapPin className={`w-4 h-4 shrink-0 ${displayLocation ? 'text-[#075B43]' : 'text-gray-400'}`} />
           <div className="text-xs">
-            <span className="text-gray-400 block text-[10px]">Your Location</span>
+            <span className="text-gray-400 block text-[10px]">Your Service Location</span>
             <span className="font-bold text-[#111817] truncate block">
-              {location.name}, Kadi
+              {displayLocation ? `${displayLocation}` : 'Select your location'}
             </span>
           </div>
         </div>
@@ -35,7 +41,7 @@ export const ProfessionalMatchingScreen: React.FC<ProfessionalMatchingScreenProp
           onClick={onOpenLocationModal}
           className="text-xs font-bold text-[#075B43] hover:underline shrink-0"
         >
-          Change
+          {displayLocation ? 'Change' : 'Set Location'}
         </button>
       </div>
 

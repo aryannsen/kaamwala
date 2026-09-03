@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { ArrowLeft, Menu, MapPin, X, Phone, ShieldCheck, HelpCircle, FileText, ChevronRight } from 'lucide-react';
 import { KaamWalaLogo } from './KaamWalaLogo';
-import { LocationArea } from '../../types';
+import { LocationArea, CustomerLocation } from '../../types';
 
 interface HeaderProps {
   title?: string;
   showBack?: boolean;
   onBack?: () => void;
-  selectedLocation?: LocationArea;
+  selectedLocation?: LocationArea | CustomerLocation | null;
   onOpenLocationModal?: () => void;
   rightAction?: React.ReactNode;
   onNavigateTab?: (tab: 'home' | 'bookings' | 'help' | 'profile') => void;
@@ -23,6 +23,12 @@ export const Header: React.FC<HeaderProps> = ({
   onNavigateTab
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const displayLocation = selectedLocation
+    ? 'formattedAddress' in selectedLocation
+      ? selectedLocation.locality || selectedLocation.city || selectedLocation.formattedAddress.split(',')[0]
+      : selectedLocation.name
+    : null;
 
   return (
     <>
@@ -55,9 +61,9 @@ export const Header: React.FC<HeaderProps> = ({
                 onClick={onOpenLocationModal}
                 className="flex items-center gap-1 text-[11px] text-[#66706D] font-medium hover:text-[#075B43] transition-colors mt-0.5 text-left"
               >
-                <MapPin className="w-3 h-3 text-[#075B43] shrink-0" />
+                <MapPin className={`w-3 h-3 shrink-0 ${displayLocation ? 'text-[#075B43]' : 'text-gray-400'}`} />
                 <span className="truncate max-w-[140px] text-[#111817]">
-                  {selectedLocation ? `${selectedLocation.name}, Kadi` : 'Kadi, Gujarat'}
+                  {displayLocation ? `${displayLocation}` : 'Select location'}
                 </span>
               </button>
             </div>

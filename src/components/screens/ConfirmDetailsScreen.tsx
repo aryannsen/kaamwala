@@ -8,6 +8,7 @@ interface ConfirmDetailsScreenProps {
   customerProfile: CustomerProfile;
   onUpdateProfile: (updated: CustomerProfile) => void;
   onConfirmBooking: (paymentMethod: 'Cash on Service' | 'Online UPI') => void;
+  onOpenLocationModal?: () => void;
 }
 
 export const ConfirmDetailsScreen: React.FC<ConfirmDetailsScreenProps> = ({
@@ -15,7 +16,8 @@ export const ConfirmDetailsScreen: React.FC<ConfirmDetailsScreenProps> = ({
   serviceOption,
   customerProfile,
   onUpdateProfile,
-  onConfirmBooking
+  onConfirmBooking,
+  onOpenLocationModal
 }) => {
   const [name, setName] = useState(customerProfile.name);
   const [phone, setPhone] = useState(customerProfile.phone);
@@ -23,6 +25,13 @@ export const ConfirmDetailsScreen: React.FC<ConfirmDetailsScreenProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'Cash on Service' | 'Online UPI'>('Cash on Service');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Sync state if customerProfile changes externally (e.g. location modal confirmed)
+  React.useEffect(() => {
+    if (customerProfile.address) {
+      setAddress(customerProfile.address);
+    }
+  }, [customerProfile.address]);
 
   const handleSaveDetails = () => {
     onUpdateProfile({
@@ -153,11 +162,27 @@ export const ConfirmDetailsScreen: React.FC<ConfirmDetailsScreenProps> = ({
               />
             </div>
             <div className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg border border-gray-100">
-              <span className="text-xs text-[#111817] truncate max-w-[280px]">{address}</span>
-              <Edit2
-                className="w-3 h-3 text-gray-400 cursor-pointer shrink-0 ml-1"
-                onClick={() => setIsEditing(true)}
-              />
+              <div className="flex items-center gap-2 overflow-hidden flex-1">
+                <MapPin className={`w-3.5 h-3.5 shrink-0 ${address ? 'text-[#075B43]' : 'text-gray-400'}`} />
+                <span className={`text-xs truncate max-w-[240px] ${address ? 'text-[#111817]' : 'text-gray-400 font-medium'}`}>
+                  {address || 'No service address set'}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0 ml-1">
+                {onOpenLocationModal && (
+                  <button
+                    type="button"
+                    onClick={onOpenLocationModal}
+                    className="text-[11px] font-bold text-[#075B43] hover:underline px-1 py-0.5"
+                  >
+                    {address ? 'Map' : 'Set'}
+                  </button>
+                )}
+                <Edit2
+                  className="w-3 h-3 text-gray-400 cursor-pointer hover:text-black"
+                  onClick={() => setIsEditing(true)}
+                />
+              </div>
             </div>
           </div>
         )}

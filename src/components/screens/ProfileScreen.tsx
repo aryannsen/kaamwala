@@ -100,7 +100,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ profile, onUpdateP
         )}
 
         <div className="space-y-2.5">
-          {profile.savedAddresses.map((addr) => (
+          {(!profile.savedAddresses || profile.savedAddresses.length === 0) && (
+            <div className="text-xs text-gray-500 py-3 text-center">
+              No saved addresses yet. Add your home or workplace address.
+            </div>
+          )}
+          {profile.savedAddresses?.map((addr) => (
             <div
               key={addr.id}
               className="p-2.5 bg-gray-50 rounded-xl border border-gray-100 flex items-start gap-2.5"

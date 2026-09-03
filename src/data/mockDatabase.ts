@@ -549,19 +549,6 @@ export const PROFESSIONALS: Professional[] = [
 export const DEFAULT_CUSTOMER: CustomerProfile = {
   name: 'Aryan Verma',
   phone: '98765 43210',
-  address: 'B-14, Swastik Society, Near Fuwara Chowk, Kadi, Gujarat 382715',
-  savedAddresses: [
-    {
-      id: 'addr-1',
-      label: 'Home',
-      address: 'B-14, Swastik Society, Near Fuwara Chowk, Kadi, Gujarat 382715',
-      isDefault: true
-    },
-    {
-      id: 'addr-2',
-      label: 'Office / Shop',
-      address: 'Shop 12, Station Road Commercial Complex, Kadi, Gujarat 382715',
-      isDefault: false
-    }
-  ]
+  address: '',
+  savedAddresses: []
 };

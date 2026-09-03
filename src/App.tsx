@@ -7,14 +7,20 @@ import React, { useState, useEffect } from 'react';
 import {
   Booking,
   BookingStatus,
+  CustomerLocation,
   CustomerProfile,
   LocationArea,
   Professional,
   ServiceCategory,
   ServiceOption
 } from './types';
-import { KADI_LOCALITIES, DEFAULT_CUSTOMER } from './data/mockDatabase';
+import { DEFAULT_CUSTOMER } from './data/mockDatabase';
 import { dataService } from './services/supabaseClient';
+import {
+  getSavedCustomerLocation,
+  saveCustomerLocationLocally,
+  persistCustomerLocationToSupabase
+} from './services/locationService';
 import { Header } from './components/common/Header';
 import { BottomNavigation, NavTab } from './components/common/BottomNavigation';
 import { LocationModal } from './components/common/LocationModal';
@@ -49,13 +55,9 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<NavTab>('home');
   const [currentScreen, setCurrentScreen] = useState<FlowScreen>('TAB_VIEW');
 
-  // Location & Customer State (initialized synchronously with safe fallbacks)
-  const [selectedLocation, setSelectedLocation] = useState<LocationArea>(() => {
-    try {
-      const loc = dataService.getSelectedLocation();
-      if (loc && loc.name) return loc;
-    } catch {}
-    return KADI_LOCALITIES[0];
+  // Location & Customer State (Real customer location, no demo Fuwara Chowk default)
+  const [customerLocation, setCustomerLocation] = useState<CustomerLocation | null>(() => {
+    return getSavedCustomerLocation();
   });
   const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
   const [customerProfile, setCustomerProfile] = useState<CustomerProfile>(() => {
@@ -148,10 +150,55 @@ export default function App() {
     }
   }, [currentScreen, selectedCategory, selectedOption, selectedProfessional, activeBooking]);
 
-  // Update stored location
+  // Update customer location from Google Maps picker or search
+  const handleConfirmLocation = (loc: CustomerLocation) => {
+    setCustomerLocation(loc);
+    saveCustomerLocationLocally(loc);
+
+    // Synchronize customer profile address so checkout forms auto-fill
+    setCustomerProfile((prev) => {
+      const updated: CustomerProfile = {
+        ...prev,
+        address: loc.formattedAddress,
+        savedAddresses: [
+          {
+            id: 'addr-main',
+            label: loc.label || 'Service Address',
+            address: loc.formattedAddress,
+            locality: loc.locality,
+            city: loc.city,
+            state: loc.state,
+            pincode: loc.pincode,
+            latitude: loc.latitude,
+            longitude: loc.longitude,
+            isDefault: true
+          },
+          ...(prev.savedAddresses || []).filter((a) => a.address !== loc.formattedAddress)
+        ]
+      };
+      dataService.setCustomerProfile(updated);
+      return updated;
+    });
+
+    // Also persist asynchronously to Supabase customer_addresses
+    persistCustomerLocationToSupabase(loc).catch((err) => {
+      console.warn('Background Supabase address sync notice:', err);
+    });
+  };
+
+  // Backwards-compatible locality selector
   const handleSelectLocation = (loc: LocationArea) => {
-    setSelectedLocation(loc);
-    dataService.setSelectedLocation(loc);
+    const custLoc: CustomerLocation = {
+      latitude: 23.3032,
+      longitude: 72.3312,
+      formattedAddress: `${loc.name}, Kadi, Gujarat ${loc.pincode}`,
+      locality: loc.name,
+      city: loc.taluka || 'Kadi',
+      state: 'Gujarat',
+      pincode: loc.pincode,
+      source: 'search'
+    };
+    handleConfirmLocation(custLoc);
   };
 
   // Update customer profile
@@ -187,7 +234,8 @@ export default function App() {
   // Flow Step 3: From Service Detail -> Find Matching Pros in Kadi
   const handleContinueToPros = async (uploadedPhotoUrl?: string) => {
     if (!selectedCategory || !selectedOption) return;
-    const pros = await dataService.getProfessionalsForCategory(selectedCategory.id, selectedLocation.name);
+    const localityName = customerLocation?.locality || customerLocation?.city || 'Kadi';
+    const pros = await dataService.getProfessionalsForCategory(selectedCategory.id, localityName);
     setMatchingProfessionals(pros);
     setCurrentScreen('MATCHING_PROS');
   };
@@ -321,7 +369,7 @@ export default function App() {
           title={getHeaderTitle()}
           showBack={currentScreen !== 'TAB_VIEW'}
           onBack={handleBack}
-          selectedLocation={selectedLocation}
+          selectedLocation={customerLocation}
           onOpenLocationModal={() => setIsLocationModalOpen(true)}
           onNavigateTab={(tab) => {
             setCurrentScreen('TAB_VIEW');
@@ -335,7 +383,7 @@ export default function App() {
             <>
               {activeTab === 'home' && (
                 <HomeScreen
-                  selectedLocation={selectedLocation}
+                  selectedLocation={customerLocation}
                   onOpenLocationModal={() => setIsLocationModalOpen(true)}
                   categories={categories}
                   onSelectCategory={handleSelectCategory}
@@ -402,7 +450,7 @@ export default function App() {
 
           {currentScreen === 'MATCHING_PROS' && selectedOption && (
             <ProfessionalMatchingScreen
-              location={selectedLocation}
+              location={customerLocation}
               onOpenLocationModal={() => setIsLocationModalOpen(true)}
               serviceOption={selectedOption}
               professionals={matchingProfessionals}
@@ -417,6 +465,7 @@ export default function App() {
               customerProfile={customerProfile}
               onUpdateProfile={handleUpdateProfile}
               onConfirmBooking={handleConfirmBooking}
+              onOpenLocationModal={() => setIsLocationModalOpen(true)}
             />
           )}
 
@@ -467,8 +516,8 @@ export default function App() {
         <LocationModal
           isOpen={isLocationModalOpen}
           onClose={() => setIsLocationModalOpen(false)}
-          selectedLocation={selectedLocation}
-          onSelectLocation={handleSelectLocation}
+          currentLocation={customerLocation}
+          onConfirmLocation={handleConfirmLocation}
         />
       </div>
     </div>
