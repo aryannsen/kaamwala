@@ -1,0 +1,6 @@
+{
+  "name": "KaamWala",
+  "description": "Hyperlocal home services platform connecting trusted local professionals in Kadi, Gujarat.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
