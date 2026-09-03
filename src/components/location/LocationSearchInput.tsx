@@ -17,12 +17,16 @@ interface LocationSearchInputProps {
   onSelectPlace: (place: PlaceResultData) => void;
   placeholder?: string;
   onError?: (message: string) => void;
+  biasCoordinates?: { latitude: number; longitude: number } | null;
+  biasRadiusMeters?: number;
 }
 
 export const LocationSearchInput: React.FC<LocationSearchInputProps> = ({
   onSelectPlace,
   placeholder = 'Search area, society, landmark, or street...',
-  onError
+  onError,
+  biasCoordinates,
+  biasRadiusMeters = 35000
 }) => {
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<Array<{ id: string; title: string; subtitle: string; raw: any }>>([]);
@@ -37,8 +41,9 @@ export const LocationSearchInput: React.FC<LocationSearchInputProps> = ({
 
   // Initialize session token when places library is available
   useEffect(() => {
-    if (placesLib?.AutocompleteSessionToken && !sessionTokenRef.current) {
-      sessionTokenRef.current = new placesLib.AutocompleteSessionToken();
+    const places = placesLib || (typeof window !== 'undefined' ? (window as any).google?.maps?.places : null);
+    if (places?.AutocompleteSessionToken && !sessionTokenRef.current) {
+      sessionTokenRef.current = new places.AutocompleteSessionToken();
     }
   }, [placesLib]);
 
@@ -53,7 +58,7 @@ export const LocationSearchInput: React.FC<LocationSearchInputProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Fetch suggestions with debouncing
+  // Fetch suggestions with debouncing and dynamic location bias
   const fetchSuggestions = useCallback(
     async (input: string) => {
       if (!input.trim() || input.length < 2) {
@@ -65,16 +70,58 @@ export const LocationSearchInput: React.FC<LocationSearchInputProps> = ({
       setIsLoading(true);
 
       try {
+        const places = placesLib || (typeof window !== 'undefined' ? (window as any).google?.maps?.places : null);
+
+        // Build dynamic geographic location bias using customer's current coordinates
+        const hasValidCoordinates =
+          biasCoordinates &&
+          typeof biasCoordinates.latitude === 'number' &&
+          typeof biasCoordinates.longitude === 'number' &&
+          !isNaN(biasCoordinates.latitude) &&
+          !isNaN(biasCoordinates.longitude);
+
+        // Google Places API specifies radius in meters between 0.0 and 50000.0 (inclusive)
+        const safeRadius = Math.min(50000, Math.max(1000, biasRadiusMeters || 35000));
+
+        // Circular location bias favors places within this area without restricting outside searches
+        const locationBias = hasValidCoordinates
+          ? {
+              center: {
+                lat: biasCoordinates.latitude,
+                lng: biasCoordinates.longitude
+              },
+              radius: safeRadius
+            }
+          : undefined;
+
+        // Origin enables geodesic distance calculations from customer's coordinates
+        const origin = hasValidCoordinates
+          ? {
+              lat: biasCoordinates.latitude,
+              lng: biasCoordinates.longitude
+            }
+          : undefined;
+
         // Modern Places API (New): AutocompleteSuggestion
-        if (placesLib?.AutocompleteSuggestion?.fetchAutocompleteSuggestions) {
-          if (!sessionTokenRef.current && placesLib.AutocompleteSessionToken) {
-            sessionTokenRef.current = new placesLib.AutocompleteSessionToken();
+        if (places?.AutocompleteSuggestion?.fetchAutocompleteSuggestions) {
+          if (!sessionTokenRef.current && places.AutocompleteSessionToken) {
+            sessionTokenRef.current = new places.AutocompleteSessionToken();
           }
 
-          const response = await placesLib.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+          const request: any = {
             input,
-            sessionToken: sessionTokenRef.current
-          });
+            sessionToken: sessionTokenRef.current,
+            internalUsageAttributionIds: ['gmp_mcp_codeassist_v1_aistudio']
+          };
+
+          if (locationBias) {
+            request.locationBias = locationBias;
+          }
+          if (origin) {
+            request.origin = origin;
+          }
+
+          const response = await places.AutocompleteSuggestion.fetchAutocompleteSuggestions(request);
 
           const items = (response.suggestions || [])
             .filter((s: any) => s.placePrediction)
@@ -90,12 +137,26 @@ export const LocationSearchInput: React.FC<LocationSearchInputProps> = ({
 
           setSuggestions(items);
           setIsOpen(items.length > 0);
-        } else if (placesLib?.AutocompleteService) {
+        } else if (places?.AutocompleteService) {
           // Fallback to AutocompleteService
-          const service = new placesLib.AutocompleteService();
-          service.getPlacePredictions({ input }, (predictions, status) => {
-            if (status === google.maps.places.PlacesServiceStatus.OK && predictions) {
-              const items = predictions.map((p) => ({
+          const service = new places.AutocompleteService();
+          const legacyRequest: any = {
+            input,
+            sessionToken: sessionTokenRef.current
+          };
+
+          if (locationBias) {
+            legacyRequest.locationBias = locationBias;
+          }
+          if (origin) {
+            legacyRequest.origin = origin;
+          }
+
+          service.getPlacePredictions(legacyRequest, (predictions: any, status: any) => {
+            const placesServiceStatus =
+              (window as any).google?.maps?.places?.PlacesServiceStatus || { OK: 'OK' };
+            if (status === placesServiceStatus.OK && predictions) {
+              const items = predictions.map((p: any) => ({
                 id: p.place_id,
                 title: p.structured_formatting?.main_text || p.description,
                 subtitle: p.structured_formatting?.secondary_text || '',
@@ -116,7 +177,7 @@ export const LocationSearchInput: React.FC<LocationSearchInputProps> = ({
         setIsLoading(false);
       }
     },
-    [placesLib]
+    [placesLib, biasCoordinates?.latitude, biasCoordinates?.longitude, biasRadiusMeters]
   );
 
   const handleInputChange = (val: string) => {
@@ -168,8 +229,9 @@ export const LocationSearchInput: React.FC<LocationSearchInputProps> = ({
           });
 
           // Reset session token after selection
-          if (placesLib?.AutocompleteSessionToken) {
-            sessionTokenRef.current = new placesLib.AutocompleteSessionToken();
+          const places = placesLib || (typeof window !== 'undefined' ? (window as any).google?.maps?.places : null);
+          if (places?.AutocompleteSessionToken) {
+            sessionTokenRef.current = new places.AutocompleteSessionToken();
           }
           setIsLoading(false);
           return;
@@ -177,28 +239,38 @@ export const LocationSearchInput: React.FC<LocationSearchInputProps> = ({
       }
 
       // 2. Geocoding fallback by placeId
-      const geocoder = geocodingLib ? new geocodingLib.Geocoder() : new google.maps.Geocoder();
-      geocoder.geocode({ placeId: item.id }, (results, status) => {
-        setIsLoading(false);
-        if (status === google.maps.GeocoderStatus.OK && results && results[0]) {
-          const res = results[0];
-          const lat = res.geometry.location.lat();
-          const lng = res.geometry.location.lng();
-          const parsed = extractAddressComponents(res.address_components as any);
+      const geocoder = geocodingLib
+        ? new geocodingLib.Geocoder()
+        : typeof window !== 'undefined' && (window as any).google?.maps?.Geocoder
+        ? new (window as any).google.maps.Geocoder()
+        : null;
 
-          onSelectPlace({
-            latitude: lat,
-            longitude: lng,
-            formattedAddress: res.formatted_address || `${item.title}, ${item.subtitle}`,
-            locality: parsed.locality,
-            city: parsed.city,
-            state: parsed.state,
-            pincode: parsed.pincode
-          });
-        } else {
-          onError?.("Could not load details for this place. Please try another search.");
-        }
-      });
+      if (geocoder) {
+        geocoder.geocode({ placeId: item.id }, (results: any, status: any) => {
+          setIsLoading(false);
+          const okStatus = (window as any).google?.maps?.GeocoderStatus?.OK || 'OK';
+          if (status === okStatus && results && results[0]) {
+            const res = results[0];
+            const lat = res.geometry.location.lat();
+            const lng = res.geometry.location.lng();
+            const parsed = extractAddressComponents(res.address_components as any);
+
+            onSelectPlace({
+              latitude: lat,
+              longitude: lng,
+              formattedAddress: res.formatted_address || `${item.title}, ${item.subtitle}`,
+              locality: parsed.locality,
+              city: parsed.city,
+              state: parsed.state,
+              pincode: parsed.pincode
+            });
+          } else {
+            onError?.("Could not load details for this place. Please try another search.");
+          }
+        });
+      } else {
+        setIsLoading(false);
+      }
     } catch (err: any) {
       setIsLoading(false);
       console.warn('Failed to resolve selected place:', err);
