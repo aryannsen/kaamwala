@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Navigation,
@@ -7,17 +7,10 @@ import {
   AlertCircle,
   Loader2,
   Building2,
-  Crosshair
+  Home
 } from 'lucide-react';
-import { APIProvider } from '@vis.gl/react-google-maps';
 import { CustomerLocation, LocationArea } from '../../types';
-import {
-  reverseGeocodeCoordinates,
-  saveAddressToSupabase,
-  extractAddressComponents
-} from '../../services/locationService';
-import { GoogleMapLocationPicker } from './GoogleMapLocationPicker';
-import { LocationSearchInput } from './LocationSearchInput';
+import { saveAddressToSupabase } from '../../services/locationService';
 import { KADI_LOCALITIES } from '../../data/mockDatabase';
 
 interface LocationModalProps {
@@ -27,44 +20,54 @@ interface LocationModalProps {
   onConfirmLocation: (location: CustomerLocation) => void;
 }
 
-// Default geographic center for Kadi, Gujarat service area (used only for initial camera view if no location chosen)
-const KADI_CENTER = {
-  lat: 23.3032,
-  lng: 72.3312
-};
-
 export const LocationModal: React.FC<LocationModalProps> = ({
   isOpen,
   onClose,
   currentLocation,
   onConfirmLocation
 }) => {
-  const apiKey = (
-    (typeof import.meta !== 'undefined' &&
-      (import.meta as { env?: Record<string, string> }).env?.VITE_GOOGLE_MAPS_API_KEY) ||
-    ''
-  ).trim();
+  const [addressLine, setAddressLine] = useState('');
+  const [locality, setLocality] = useState('');
+  const [city, setCity] = useState('Kadi');
+  const [state, setState] = useState('Gujarat');
+  const [pincode, setPincode] = useState('382715');
 
-  // Temporary staging state before customer taps [Confirm Location]
-  const [stagedLocation, setStagedLocation] = useState<CustomerLocation | null>(null);
+  // GPS coordinates captured via navigator.geolocation
+  const [gpsCoords, setGpsCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [isDetectingGps, setIsDetectingGps] = useState(false);
-  const [isGeocoding, setIsGeocoding] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'info' | 'error' | 'success'; text: string } | null>(null);
-  const [mapLoadError, setMapLoadError] = useState<string | null>(null);
 
-  // Initialize staged location whenever modal opens
+  // Initialize fields from existing currentLocation when opening
   useEffect(() => {
     if (isOpen) {
-      setStagedLocation(currentLocation || null);
+      if (currentLocation) {
+        setAddressLine(currentLocation.formattedAddress?.split(',')[0] || '');
+        setLocality(currentLocation.locality || '');
+        setCity(currentLocation.city || 'Kadi');
+        setState(currentLocation.state || 'Gujarat');
+        setPincode(currentLocation.pincode || '382715');
+        if (currentLocation.latitude && currentLocation.longitude) {
+          setGpsCoords({
+            latitude: currentLocation.latitude,
+            longitude: currentLocation.longitude
+          });
+        }
+      } else {
+        setAddressLine('');
+        setLocality('');
+        setCity('Kadi');
+        setState('Gujarat');
+        setPincode('382715');
+        setGpsCoords(null);
+      }
       setStatusMessage(null);
-      setMapLoadError(null);
     }
   }, [isOpen, currentLocation]);
 
   if (!isOpen) return null;
 
-  // 1. "Use my current location" flow (Geolocation API + Reverse Geocode)
+  // 1. "Use my current location" using browser Geolocation API ONLY
   const handleUseCurrentLocation = () => {
     setIsDetectingGps(true);
     setStatusMessage(null);
@@ -73,69 +76,33 @@ export const LocationModal: React.FC<LocationModalProps> = ({
       setIsDetectingGps(false);
       setStatusMessage({
         type: 'error',
-        text: "Your current location couldn't be detected. Search for your location instead."
+        text: 'Geolocation is not supported by your browser. Please enter your address manually.'
       });
       return;
     }
 
     navigator.geolocation.getCurrentPosition(
-      async (pos) => {
+      (pos) => {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
+        setGpsCoords({ latitude: lat, longitude: lng });
         setIsDetectingGps(false);
-        setIsGeocoding(true);
-
-        try {
-          // Reverse geocode real coordinates using Google Geocoding API
-          const geoRes = await reverseGeocodeCoordinates(lat, lng);
-          const newLoc: CustomerLocation = {
-            latitude: lat,
-            longitude: lng,
-            formattedAddress: geoRes.formattedAddress,
-            locality: geoRes.locality,
-            city: geoRes.city,
-            state: geoRes.state,
-            pincode: geoRes.pincode,
-            source: 'gps'
-          };
-
-          setStagedLocation(newLoc);
-          setStatusMessage({
-            type: 'success',
-            text: 'Current location found. Please confirm below.'
-          });
-        } catch (err: any) {
-          console.warn('Reverse geocoding error:', err);
-          // Still provide accurate GPS coordinates if geocoding service is busy
-          const fallbackLoc: CustomerLocation = {
-            latitude: lat,
-            longitude: lng,
-            formattedAddress: `Location at ${lat.toFixed(5)}, ${lng.toFixed(5)}`,
-            locality: 'Kadi Service Zone',
-            city: 'Kadi',
-            state: 'Gujarat',
-            source: 'gps'
-          };
-          setStagedLocation(fallbackLoc);
-          setStatusMessage({
-            type: 'info',
-            text: 'Current GPS coordinates detected. Adjust pin on map if needed.'
-          });
-        } finally {
-          setIsGeocoding(false);
-        }
+        setStatusMessage({
+          type: 'success',
+          text: `Current GPS coordinates detected (${lat.toFixed(4)}°N, ${lng.toFixed(4)}°E). Please enter your flat/house & street below.`
+        });
       },
       (error) => {
         setIsDetectingGps(false);
         if (error.code === error.PERMISSION_DENIED) {
           setStatusMessage({
             type: 'error',
-            text: 'Location permission was denied. You can search for your address manually.'
+            text: 'Location permission was denied. You can easily enter your address manually below.'
           });
         } else {
           setStatusMessage({
             type: 'error',
-            text: "Your current location couldn't be detected. Search for your location instead."
+            text: "Your current location couldn't be detected right now. Please enter your address below."
           });
         }
       },
@@ -147,115 +114,72 @@ export const LocationModal: React.FC<LocationModalProps> = ({
     );
   };
 
-  // 2. Search selection flow (Places API Autocomplete)
-  const handleSelectPlace = (place: {
-    latitude: number;
-    longitude: number;
-    formattedAddress: string;
-    locality?: string;
-    city?: string;
-    state?: string;
-    pincode?: string;
-  }) => {
-    const newLoc: CustomerLocation = {
-      latitude: place.latitude,
-      longitude: place.longitude,
-      formattedAddress: place.formattedAddress,
-      locality: place.locality,
-      city: place.city,
-      state: place.state,
-      pincode: place.pincode,
-      source: 'search'
-    };
-
-    setStagedLocation(newLoc);
-    setStatusMessage({
-      type: 'success',
-      text: 'Location selected. Verify on the map and confirm.'
-    });
-  };
-
-  // 3. Map pin drag or click adjustment
-  const handleMapPositionChange = async (lat: number, lng: number) => {
-    setIsGeocoding(true);
-    try {
-      const geoRes = await reverseGeocodeCoordinates(lat, lng);
-      setStagedLocation({
-        latitude: lat,
-        longitude: lng,
-        formattedAddress: geoRes.formattedAddress,
-        locality: geoRes.locality,
-        city: geoRes.city,
-        state: geoRes.state,
-        pincode: geoRes.pincode,
-        source: 'map'
-      });
-    } catch {
-      setStagedLocation((prev) => ({
-        latitude: lat,
-        longitude: lng,
-        formattedAddress: prev?.formattedAddress || `Pin Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
-        locality: prev?.locality,
-        city: prev?.city,
-        state: prev?.state,
-        pincode: prev?.pincode,
-        source: 'map'
-      }));
-    } finally {
-      setIsGeocoding(false);
-    }
-  };
-
-  // 4. Quick locality pick (Geocodes chosen Kadi landmark)
+  // 2. Quick locality selection preset
   const handleSelectLocalityPreset = (loc: LocationArea) => {
-    // Reverse geocode or set known Kadi landmark
-    const newLoc: CustomerLocation = {
-      latitude: KADI_CENTER.lat,
-      longitude: KADI_CENTER.lng,
-      formattedAddress: `${loc.name}, Kadi, Gujarat ${loc.pincode}`,
-      locality: loc.name,
-      city: loc.taluka,
-      state: 'Gujarat',
-      pincode: loc.pincode,
-      source: 'search'
-    };
-    setStagedLocation(newLoc);
+    setLocality(loc.name);
+    setCity(loc.taluka || 'Kadi');
+    setPincode(loc.pincode || '382715');
     setStatusMessage({
       type: 'info',
-      text: `Selected ${loc.name}. Fine-tune with the map pin if needed.`
+      text: `Selected ${loc.name}. Please enter your house / flat number.`
     });
   };
 
-  // 5. Final Confirmation -> Supabase + App state
+  // Compute combined formatted address preview
+  const formattedPreview = [
+    addressLine.trim(),
+    locality.trim(),
+    city.trim(),
+    `${state.trim()} ${pincode.trim()}`
+  ]
+    .filter(Boolean)
+    .join(', ');
+
+  const canConfirm = Boolean(addressLine.trim() || locality.trim());
+
+  // 3. Confirm location and save to Supabase customer_addresses
   const handleConfirm = async () => {
-    if (!stagedLocation) return;
+    if (!canConfirm) return;
     setIsSaving(true);
 
     try {
-      const confirmed: CustomerLocation = {
-        ...stagedLocation,
+      const fullAddress = formattedPreview || `${locality || city || 'Kadi'}, Gujarat`;
+
+      const confirmedLocation: CustomerLocation = {
+        latitude: gpsCoords?.latitude ?? 0,
+        longitude: gpsCoords?.longitude ?? 0,
+        formattedAddress: fullAddress,
+        locality: locality.trim() || undefined,
+        city: city.trim() || 'Kadi',
+        state: state.trim() || 'Gujarat',
+        pincode: pincode.trim() || '382715',
+        source: gpsCoords ? 'gps' : 'search',
         confirmedAt: new Date().toISOString()
       };
 
       // Save to Supabase customer_addresses and local storage
-      await saveAddressToSupabase(confirmed);
+      await saveAddressToSupabase(confirmedLocation);
 
-      // Notify parent app
-      onConfirmLocation(confirmed);
+      onConfirmLocation(confirmedLocation);
       onClose();
     } catch (err) {
-      console.warn('Error confirming location:', err);
-      if (stagedLocation) {
-        onConfirmLocation(stagedLocation);
-      }
+      console.warn('Error saving location:', err);
+      const fallbackLoc: CustomerLocation = {
+        latitude: gpsCoords?.latitude ?? 0,
+        longitude: gpsCoords?.longitude ?? 0,
+        formattedAddress: formattedPreview,
+        locality: locality.trim() || undefined,
+        city: city.trim() || 'Kadi',
+        state: state.trim() || 'Gujarat',
+        pincode: pincode.trim() || '382715',
+        source: gpsCoords ? 'gps' : 'search'
+      };
+      onConfirmLocation(fallbackLoc);
       onClose();
     } finally {
       setIsSaving(false);
     }
   };
-
-  const activeLat = stagedLocation?.latitude ?? KADI_CENTER.lat;
-  const activeLng = stagedLocation?.longitude ?? KADI_CENTER.lng;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -265,7 +189,7 @@ export const LocationModal: React.FC<LocationModalProps> = ({
         onClick={onClose}
       />
 
-      {/* Sheet / Modal Container */}
+      {/* Modal Sheet Container */}
       <div className="relative w-full max-w-lg bg-white rounded-t-2xl sm:rounded-2xl max-h-[92vh] flex flex-col z-10 overflow-hidden shadow-2xl animate-in slide-in-from-bottom duration-200">
         {/* Header */}
         <div className="p-4 border-b border-[#E7E9E6] flex items-center justify-between bg-white shrink-0">
@@ -277,7 +201,7 @@ export const LocationModal: React.FC<LocationModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-gray-500 hover:text-black rounded-full hover:bg-gray-100 transition-colors"
+            className="p-1.5 text-gray-500 hover:text-black rounded-full hover:bg-gray-100 transition-colors cursor-pointer"
             aria-label="Close"
           >
             <X className="w-5 h-5" />
@@ -285,112 +209,126 @@ export const LocationModal: React.FC<LocationModalProps> = ({
         </div>
 
         {/* Modal Scrollable Body */}
-        <div className="overflow-y-auto flex-1 p-4 space-y-3.5">
-          {/* Action 1: Use my current location (GPS) */}
+        <div className="overflow-y-auto flex-1 p-4 space-y-4">
+          {/* Action 1: Use my current location (Browser Geolocation API) */}
           <button
             id="gps-location-btn"
             type="button"
             onClick={handleUseCurrentLocation}
-            disabled={isDetectingGps || isGeocoding}
+            disabled={isDetectingGps}
             className="w-full flex items-center justify-center gap-2.5 py-3 px-4 bg-[#075B43] hover:bg-[#054432] active:bg-[#043426] text-white rounded-xl font-semibold text-sm transition-all shadow-2xs cursor-pointer min-h-[44px]"
           >
-            {isDetectingGps || isGeocoding ? (
+            {isDetectingGps ? (
               <Loader2 className="w-4 h-4 animate-spin text-white" />
             ) : (
               <Navigation className="w-4 h-4 text-white" />
             )}
             <span>
-              {isDetectingGps
-                ? 'Detecting your GPS location...'
-                : isGeocoding
-                ? 'Resolving address details...'
-                : 'Use my current location'}
+              {isDetectingGps ? 'Detecting your GPS location...' : 'Use my current location'}
             </span>
           </button>
 
-          {/* Action 2: Search Location (Google Places Autocomplete) */}
-          {apiKey ? (
-            <APIProvider
-              apiKey={apiKey}
-              libraries={['places', 'marker', 'geocoding']}
-              onLoad={() => setMapLoadError(null)}
-              onError={() =>
-                setMapLoadError('Map couldn\'t be loaded right now. Please try again or search for your address.')
-              }
+          {/* Status Message / GPS info banner */}
+          {statusMessage && (
+            <div
+              className={`p-3 rounded-xl border text-xs flex items-start gap-2.5 transition-all ${
+                statusMessage.type === 'error'
+                  ? 'bg-rose-50 border-rose-200 text-rose-800'
+                  : statusMessage.type === 'success'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                  : 'bg-blue-50 border-blue-200 text-blue-900'
+              }`}
             >
-              <div className="space-y-3.5">
-                <div>
-                  <label htmlFor="location-search-input" className="block text-xs font-semibold text-gray-700 mb-1.5">
-                    Search area or address
-                  </label>
-                  <LocationSearchInput
-                    onSelectPlace={handleSelectPlace}
-                    onError={(msg) => setStatusMessage({ type: 'error', text: msg })}
-                  />
-                </div>
-
-                {/* Status / Alert Banner */}
-                {statusMessage && (
-                  <div
-                    className={`p-3 rounded-xl border text-xs flex items-start gap-2.5 transition-all ${
-                      statusMessage.type === 'error'
-                        ? 'bg-rose-50 border-rose-200 text-rose-800'
-                        : statusMessage.type === 'success'
-                        ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                        : 'bg-blue-50 border-blue-200 text-blue-900'
-                    }`}
-                  >
-                    <AlertCircle
-                      className={`w-4 h-4 shrink-0 mt-0.5 ${
-                        statusMessage.type === 'error'
-                          ? 'text-rose-600'
-                          : statusMessage.type === 'success'
-                          ? 'text-emerald-700'
-                          : 'text-blue-600'
-                      }`}
-                    />
-                    <span className="leading-snug">{statusMessage.text}</span>
-                  </div>
-                )}
-
-                {mapLoadError && (
-                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-2">
-                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                    <span>{mapLoadError}</span>
-                  </div>
-                )}
-
-                {/* Interactive Google Map with live marker */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-semibold text-gray-700">Map View</span>
-                    {stagedLocation && (
-                      <span className="text-[11px] text-[#075B43] font-medium flex items-center gap-1">
-                        <span className="w-2 h-2 rounded-full bg-[#075B43] animate-pulse" />
-                        Pin Active
-                      </span>
-                    )}
-                  </div>
-
-                  <GoogleMapLocationPicker
-                    latitude={activeLat}
-                    longitude={activeLng}
-                    onPositionChange={handleMapPositionChange}
-                    height="220px"
-                    isDraggable={true}
-                  />
-                </div>
-              </div>
-            </APIProvider>
-          ) : (
-            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 space-y-1">
-              <div className="font-semibold">Google Maps Platform Key Required</div>
-              <div>Please set VITE_GOOGLE_MAPS_API_KEY to activate interactive maps and places search.</div>
+              <AlertCircle
+                className={`w-4 h-4 shrink-0 mt-0.5 ${
+                  statusMessage.type === 'error'
+                    ? 'text-rose-600'
+                    : statusMessage.type === 'success'
+                    ? 'text-emerald-700'
+                    : 'text-blue-600'
+                }`}
+              />
+              <span className="leading-snug">{statusMessage.text}</span>
             </div>
           )}
 
+          {/* GPS Coordinates Badge (if captured) */}
+          {gpsCoords && (
+            <div className="flex items-center justify-between px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800">
+              <span className="flex items-center gap-1.5 font-medium">
+                <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
+                GPS Coordinates Acquired
+              </span>
+              <span className="font-mono text-[11px] text-emerald-700">
+                {gpsCoords.latitude.toFixed(4)}°N, {gpsCoords.longitude.toFixed(4)}°E
+              </span>
+            </div>
+          )}
+
+          {/* Manual Address Input Fields */}
+          <div className="space-y-3 pt-1">
+            <div>
+              <label htmlFor="address-line-input" className="block text-xs font-semibold text-gray-700 mb-1">
+                House / Flat / Building / Street <span className="text-red-500">*</span>
+              </label>
+              <input
+                id="address-line-input"
+                type="text"
+                value={addressLine}
+                onChange={(e) => setAddressLine(e.target.value)}
+                placeholder="e.g. Flat 302, Gokul Heights, Station Road"
+                className="w-full px-3.5 py-2.5 bg-gray-50 border border-[#E7E9E6] rounded-xl text-sm text-[#111817] focus:outline-none focus:ring-2 focus:ring-[#075B43] focus:border-transparent transition-all placeholder:text-gray-400"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="locality-input" className="block text-xs font-semibold text-gray-700 mb-1">
+                Locality / Area <span className="text-red-500">*</span>
+              </label>
+              <input
+                id="locality-input"
+                type="text"
+                value={locality}
+                onChange={(e) => setLocality(e.target.value)}
+                placeholder="e.g. Swastik Society, Fuwara Chowk"
+                className="w-full px-3.5 py-2.5 bg-gray-50 border border-[#E7E9E6] rounded-xl text-sm text-[#111817] focus:outline-none focus:ring-2 focus:ring-[#075B43] focus:border-transparent transition-all placeholder:text-gray-400"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="city-input" className="block text-xs font-semibold text-gray-700 mb-1">
+                  City / Taluka
+                </label>
+                <input
+                  id="city-input"
+                  type="text"
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  placeholder="Kadi"
+                  className="w-full px-3.5 py-2.5 bg-gray-50 border border-[#E7E9E6] rounded-xl text-sm text-[#111817] focus:outline-none focus:ring-2 focus:ring-[#075B43] focus:border-transparent transition-all placeholder:text-gray-400"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="pincode-input" className="block text-xs font-semibold text-gray-700 mb-1">
+                  Pincode
+                </label>
+                <input
+                  id="pincode-input"
+                  type="text"
+                  maxLength={6}
+                  value={pincode}
+                  onChange={(e) => setPincode(e.target.value)}
+                  placeholder="382715"
+                  className="w-full px-3.5 py-2.5 bg-gray-50 border border-[#E7E9E6] rounded-xl text-sm text-[#111817] focus:outline-none focus:ring-2 focus:ring-[#075B43] focus:border-transparent transition-all placeholder:text-gray-400 font-mono"
+                />
+              </div>
+            </div>
+          </div>
+
           {/* Quick Popular Localities in Kadi */}
-          <div className="pt-1">
+          <div className="pt-2">
             <div className="text-xs font-semibold text-[#66706D] mb-2 flex items-center gap-1">
               <Building2 className="w-3.5 h-3.5" />
               <span>Popular Localities in Kadi</span>
@@ -401,7 +339,11 @@ export const LocationModal: React.FC<LocationModalProps> = ({
                   key={loc.id}
                   type="button"
                   onClick={() => handleSelectLocalityPreset(loc)}
-                  className="px-2.5 py-1.5 text-xs bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg border border-[#E7E9E6] font-medium transition-colors"
+                  className={`px-2.5 py-1.5 text-xs rounded-lg border font-medium transition-colors cursor-pointer ${
+                    locality === loc.name
+                      ? 'bg-[#075B43] text-white border-[#075B43]'
+                      : 'bg-gray-50 hover:bg-gray-100 text-gray-700 border-[#E7E9E6]'
+                  }`}
                 >
                   {loc.name}
                 </button>
@@ -412,36 +354,25 @@ export const LocationModal: React.FC<LocationModalProps> = ({
 
         {/* Confirmation Footer Card */}
         <div className="p-4 border-t border-[#E7E9E6] bg-gray-50 shrink-0 space-y-3">
-          {stagedLocation ? (
+          {formattedPreview ? (
             <div className="bg-white p-3 rounded-xl border border-[#E7E9E6] shadow-2xs">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-bold tracking-wider uppercase text-[#075B43] bg-[#075B43]/10 px-2 py-0.5 rounded">
-                  {stagedLocation.source === 'gps'
-                    ? 'Current GPS Location'
-                    : stagedLocation.source === 'search'
-                    ? 'Searched Address'
-                    : 'Map Pin Location'}
+                  {gpsCoords ? 'GPS Verified Address' : 'Doorstep Address'}
                 </span>
-                <span className="text-[11px] text-gray-400 font-mono">
-                  {stagedLocation.latitude.toFixed(4)}°N, {stagedLocation.longitude.toFixed(4)}°E
-                </span>
+                {gpsCoords && (
+                  <span className="text-[11px] text-gray-400 font-mono">
+                    {gpsCoords.latitude.toFixed(4)}°N, {gpsCoords.longitude.toFixed(4)}°E
+                  </span>
+                )}
               </div>
-
               <div className="text-sm font-bold text-[#111817] mt-1.5 leading-snug line-clamp-2">
-                {stagedLocation.formattedAddress}
+                {formattedPreview}
               </div>
-
-              {(stagedLocation.locality || stagedLocation.city) && (
-                <div className="text-xs text-[#66706D] mt-0.5">
-                  {[stagedLocation.locality, stagedLocation.city, stagedLocation.state, stagedLocation.pincode]
-                    .filter(Boolean)
-                    .join(', ')}
-                </div>
-              )}
             </div>
           ) : (
-            <div className="text-center py-2 text-xs text-gray-500">
-              No location selected yet. Tap &ldquo;Use my current location&rdquo; or search above.
+            <div className="text-center py-1.5 text-xs text-gray-500">
+              Enter your address details or tap &ldquo;Use my current location&rdquo; above.
             </div>
           )}
 
@@ -449,9 +380,9 @@ export const LocationModal: React.FC<LocationModalProps> = ({
             id="confirm-location-btn"
             type="button"
             onClick={handleConfirm}
-            disabled={!stagedLocation || isSaving || isGeocoding}
+            disabled={!canConfirm || isSaving}
             className={`w-full py-3 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all min-h-[44px] ${
-              stagedLocation && !isSaving && !isGeocoding
+              canConfirm && !isSaving
                 ? 'bg-[#075B43] hover:bg-[#054432] text-white shadow-md active:scale-98 cursor-pointer'
                 : 'bg-gray-200 text-gray-400 cursor-not-allowed'
             }`}

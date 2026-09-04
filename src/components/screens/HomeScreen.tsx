@@ -182,12 +182,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           <h3 className="text-sm font-bold text-[#111817] mb-3">How it works</h3>
           <div className="space-y-3">
             {[
-              { step: '1', title: 'Choose location', desc: 'Select your colony or society in Kadi' },
-              { step: '2', title: 'Select service', desc: 'Pick the exact home repair or maintenance job' },
-              { step: '3', title: 'See price & professionals', desc: 'View verified local technicians with honest ETAs' },
-              { step: '4', title: 'Confirm booking', desc: 'No prepayment required — pay cash after work' },
-              { step: '5', title: 'Get the job done', desc: 'Professional arrives at your doorstep on time' }
-            ].map((item, idx) => (
+              { step: '1', title: 'Set your location', desc: 'Enter your doorstep address or use GPS in Kadi' },
+              { step: '2', title: 'Select service & job', desc: 'Pick the exact home repair or maintenance task' },
+              { step: '3', title: 'Describe problem', desc: 'Add optional notes or a photo to help the technician' },
+              { step: '4', title: 'Enter details', desc: 'Simple name & phone — no password or OTP required' },
+              { step: '5', title: 'Doorstep service', desc: 'Our team visits your home; pay cash after work is done' }
+            ].map((item) => (
               <div key={item.step} className="flex items-start gap-3">
                 <div className="w-6 h-6 rounded-full bg-[#075B43]/10 text-[#075B43] font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
                   {item.step}

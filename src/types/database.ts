@@ -66,6 +66,30 @@ export interface SupabaseCustomerRow {
   phone?: string | null;
   email?: string | null;
   created_at?: string;
+  updated_at?: string;
+}
+
+export interface SupabaseServiceRequestRow {
+  id?: string;
+  customer_id: string;
+  service_option_id: string;
+  address_id: string;
+  problem_description?: string | null;
+  photo_url?: string | null;
+  estimated_min_price?: number | null;
+  estimated_max_price?: number | null;
+  payment_method?: string;
+  status: string;
+  booking_code?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface SupabaseRequestStatusHistoryRow {
+  id?: string;
+  request_id: string;
+  status: string;
+  created_at?: string;
 }
 
 export type CatalogDataSource = 'supabase' | 'development_fallback';

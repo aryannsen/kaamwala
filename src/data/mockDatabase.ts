@@ -1,3 +1,4 @@
+import { resolveServiceCategoryUuid, resolveServiceOptionUuid } from './serviceCatalogUuids';
 import { ServiceCategory, ServiceOption, Professional, LocationArea, CustomerProfile } from '../types';
 
 export const KADI_LOCALITIES: LocationArea[] = [
@@ -15,7 +16,7 @@ export const KADI_LOCALITIES: LocationArea[] = [
 
 export const SERVICE_CATEGORIES: ServiceCategory[] = [
   {
-    id: 'plumbing',
+    id: resolveServiceCategoryUuid('plumbing'),
     name: 'Plumbing',
     tagline: 'Tap, pipe leakage, bathroom fitting & repairs',
     iconName: 'Wrench',
@@ -26,7 +27,7 @@ export const SERVICE_CATEGORIES: ServiceCategory[] = [
     bannerDescription: 'Trusted plumbers near you • Quick response • On-time service'
   },
   {
-    id: 'electrical',
+    id: resolveServiceCategoryUuid('electrical'),
     name: 'Electrical',
     tagline: 'Switchboard, fan, lights, wiring & MCB',
     iconName: 'Zap',
@@ -37,7 +38,7 @@ export const SERVICE_CATEGORIES: ServiceCategory[] = [
     bannerDescription: 'Certified local electricians • Safety verified • Quick diagnosis'
   },
   {
-    id: 'carpentry',
+    id: resolveServiceCategoryUuid('carpentry'),
     name: 'Carpentry',
     tagline: 'Door locks, furniture repair & woodwork',
     iconName: 'Hammer',
@@ -48,7 +49,7 @@ export const SERVICE_CATEGORIES: ServiceCategory[] = [
     bannerDescription: 'Skilled furniture & door specialists • Neat and clean craftsmanship'
   },
   {
-    id: 'painting',
+    id: resolveServiceCategoryUuid('painting'),
     name: 'Painting',
     tagline: 'Touch-up, full room & waterproofing',
     iconName: 'Paintbrush',
@@ -59,7 +60,7 @@ export const SERVICE_CATEGORIES: ServiceCategory[] = [
     bannerDescription: 'Premium paint finish • Zero mess clean-up • Weatherproof coats'
   },
   {
-    id: 'ac_repair',
+    id: resolveServiceCategoryUuid('ac_repair'),
     name: 'AC Repair',
     tagline: 'Service, gas refill & cooling fixes',
     iconName: 'Wind',
@@ -70,7 +71,7 @@ export const SERVICE_CATEGORIES: ServiceCategory[] = [
     bannerDescription: 'Expert AC cooling technicians • Split & Window units'
   },
   {
-    id: 'cleaning',
+    id: resolveServiceCategoryUuid('cleaning'),
     name: 'Cleaning',
     tagline: 'Deep bathroom, kitchen & sofa wash',
     iconName: 'Sparkles',
@@ -81,7 +82,7 @@ export const SERVICE_CATEGORIES: ServiceCategory[] = [
     bannerDescription: 'Eco-friendly cleaning agents • Professional scrubbing tools'
   },
   {
-    id: 'ro_water',
+    id: resolveServiceCategoryUuid('ro_water'),
     name: 'RO / Water Purifier',
     tagline: 'Filter change, membrane & service',
     iconName: 'Droplets',
@@ -92,7 +93,7 @@ export const SERVICE_CATEGORIES: ServiceCategory[] = [
     bannerDescription: 'Pure water guarantee • Genuine TDS-tested filters & membranes'
   },
   {
-    id: 'appliance_repair',
+    id: resolveServiceCategoryUuid('appliance_repair'),
     name: 'Appliance Repair',
     tagline: 'Washing machine, fridge & microwave',
     iconName: 'Tv',
@@ -103,7 +104,7 @@ export const SERVICE_CATEGORIES: ServiceCategory[] = [
     bannerDescription: 'Authorized brand spares inspection • Transparent pricing'
   },
   {
-    id: 'mason_labour',
+    id: resolveServiceCategoryUuid('mason_labour'),
     name: 'Mason / Labour',
     tagline: 'Tile work, plaster & domestic helper',
     iconName: 'HardHat',
@@ -114,7 +115,7 @@ export const SERVICE_CATEGORIES: ServiceCategory[] = [
     bannerDescription: 'Sturdy brickwork, tile fixing & heavy household moving support'
   },
   {
-    id: 'other_services',
+    id: resolveServiceCategoryUuid('other_services'),
     name: 'Other Services',
     tagline: 'Custom home jobs & general handyman',
     iconName: 'HelpCircle',
@@ -129,8 +130,8 @@ export const SERVICE_CATEGORIES: ServiceCategory[] = [
 export const SERVICE_OPTIONS: Record<string, ServiceOption[]> = {
   plumbing: [
     {
-      id: 'tap-install',
-      categoryId: 'plumbing',
+      id: resolveServiceOptionUuid('tap-install'),
+      categoryId: resolveServiceCategoryUuid('plumbing'),
       name: 'Tap Installation',
       startingPrice: 199,
       estimatedPriceMin: 199,
@@ -141,8 +142,8 @@ export const SERVICE_OPTIONS: Record<string, ServiceOption[]> = {
       excludes: ['Cost of new tap or angle cock valve']
     },
     {
-      id: 'tap-repair',
-      categoryId: 'plumbing',
+      id: resolveServiceOptionUuid('tap-repair'),
+      categoryId: resolveServiceCategoryUuid('plumbing'),
       name: 'Tap Repair / Leakage',
       startingPrice: 299,
       estimatedPriceMin: 299,
@@ -153,8 +154,8 @@ export const SERVICE_OPTIONS: Record<string, ServiceOption[]> = {
       excludes: ['Ceramic cartridges or new brass parts if replacement is needed']
     },
     {
-      id: 'pipe-leakage',
-      categoryId: 'plumbing',
+      id: resolveServiceOptionUuid('pipe-leakage'),
+      categoryId: resolveServiceCategoryUuid('plumbing'),
       name: 'Pipe Leakage',
       startingPrice: 399,
       estimatedPriceMin: 399,
@@ -165,8 +166,8 @@ export const SERVICE_OPTIONS: Record<string, ServiceOption[]> = {
       excludes: ['Wall tile replacement materials']
     },
     {
-      id: 'bathroom-fitting',
-      categoryId: 'plumbing',
+      id: resolveServiceOptionUuid('bathroom-fitting'),
+      categoryId: resolveServiceCategoryUuid('plumbing'),
       name: 'Bathroom Fitting',
       startingPrice: 499,
       estimatedPriceMin: 499,
@@ -177,8 +178,8 @@ export const SERVICE_OPTIONS: Record<string, ServiceOption[]> = {
       excludes: ['Hardware accessories cost']
     },
     {
-      id: 'geyser-installation',
-      categoryId: 'plumbing',
+      id: resolveServiceOptionUuid('geyser-installation'),
+      categoryId: resolveServiceCategoryUuid('plumbing'),
       name: 'Geyser Installation',
       startingPrice: 599,
       estimatedPriceMin: 599,
@@ -189,8 +190,8 @@ export const SERVICE_OPTIONS: Record<string, ServiceOption[]> = {
       excludes: ['Extra electrical cabling or bypass valve']
     },
     {
-      id: 'other-plumbing',
-      categoryId: 'plumbing',
+      id: resolveServiceOptionUuid('other-plumbing'),
+      categoryId: resolveServiceCategoryUuid('plumbing'),
       name: 'Other Plumbing Work',
       startingPrice: 199,
       estimatedPriceMin: 199,
@@ -204,8 +205,8 @@ export const SERVICE_OPTIONS: Record<string, ServiceOption[]> = {
   ],
   electrical: [
     {
-      id: 'switch-socket',
-      categoryId: 'electrical',
+      id: resolveServiceOptionUuid('switch-socket'),
+      categoryId: resolveServiceCategoryUuid('electrical'),
       name: 'Switch & Socket Repair',
       startingPrice: 149,
       estimatedPriceMin: 149,
@@ -216,8 +217,8 @@ export const SERVICE_OPTIONS: Record<string, ServiceOption[]> = {
       excludes: ['Modular switch plates']
     },
     {
-      id: 'fan-repair',
-      categoryId: 'electrical',
+      id: resolveServiceOptionUuid('fan-repair'),
+      categoryId: resolveServiceCategoryUuid('electrical'),
       name: 'Fan Repair / Installation',
       startingPrice: 199,
       estimatedPriceMin: 199,
@@ -228,8 +229,8 @@ export const SERVICE_OPTIONS: Record<string, ServiceOption[]> = {
       excludes: ['Capacitor or replacement blades']
     },
     {
-      id: 'mcb-fuse',
-      categoryId: 'electrical',
+      id: resolveServiceOptionUuid('mcb-fuse'),
+      categoryId: resolveServiceCategoryUuid('electrical'),
       name: 'MCB & Fuse Tripping Fix',
       startingPrice: 249,
       estimatedPriceMin: 249,
@@ -240,8 +241,8 @@ export const SERVICE_OPTIONS: Record<string, ServiceOption[]> = {
       excludes: ['New MCB breaker unit']
     },
     {
-      id: 'house-wiring',
-      categoryId: 'electrical',
+      id: resolveServiceOptionUuid('house-wiring'),
+      categoryId: resolveServiceCategoryUuid('electrical'),
       name: 'House Wiring Inspection',
       startingPrice: 399,
       estimatedPriceMin: 399,
@@ -254,8 +255,8 @@ export const SERVICE_OPTIONS: Record<string, ServiceOption[]> = {
   ],
   carpentry: [
     {
-      id: 'door-lock',
-      categoryId: 'carpentry',
+      id: resolveServiceOptionUuid('door-lock'),
+      categoryId: resolveServiceCategoryUuid('carpentry'),
       name: 'Door Lock Repair / Change',
       startingPrice: 249,
       estimatedPriceMin: 249,
@@ -266,8 +267,8 @@ export const SERVICE_OPTIONS: Record<string, ServiceOption[]> = {
       excludes: ['New lock cylinder or handles']
     },
     {
-      id: 'furniture-assembly',
-      categoryId: 'carpentry',
+      id: resolveServiceOptionUuid('furniture-assembly'),
+      categoryId: resolveServiceCategoryUuid('carpentry'),
       name: 'Furniture Assembly',
       startingPrice: 399,
       estimatedPriceMin: 399,
@@ -278,8 +279,8 @@ export const SERVICE_OPTIONS: Record<string, ServiceOption[]> = {
       excludes: ['Additional wooden planks']
     },
     {
-      id: 'hinge-repair',
-      categoryId: 'carpentry',
+      id: resolveServiceOptionUuid('hinge-repair'),
+      categoryId: resolveServiceCategoryUuid('carpentry'),
       name: 'Cupboard Hinge & Channel Repair',
       startingPrice: 199,
       estimatedPriceMin: 199,
@@ -292,8 +293,8 @@ export const SERVICE_OPTIONS: Record<string, ServiceOption[]> = {
   ],
   painting: [
     {
-      id: 'room-touchup',
-      categoryId: 'painting',
+      id: resolveServiceOptionUuid('room-touchup'),
+      categoryId: resolveServiceCategoryUuid('painting'),
       name: 'Single Room Touch-up',
       startingPrice: 499,
       estimatedPriceMin: 499,
@@ -304,8 +305,8 @@ export const SERVICE_OPTIONS: Record<string, ServiceOption[]> = {
       excludes: ['Paint cans unless requested']
     },
     {
-      id: 'waterproofing',
-      categoryId: 'painting',
+      id: resolveServiceOptionUuid('waterproofing'),
+      categoryId: resolveServiceCategoryUuid('painting'),
       name: 'Waterproofing & Seepage Check',
       startingPrice: 699,
       estimatedPriceMin: 699,
@@ -318,8 +319,8 @@ export const SERVICE_OPTIONS: Record<string, ServiceOption[]> = {
   ],
   ac_repair: [
     {
-      id: 'ac-service',
-      categoryId: 'ac_repair',
+      id: resolveServiceOptionUuid('ac-service'),
+      categoryId: resolveServiceCategoryUuid('ac_repair'),
       name: 'AC General Jet Pump Service',
       startingPrice: 299,
       estimatedPriceMin: 299,
@@ -330,8 +331,8 @@ export const SERVICE_OPTIONS: Record<string, ServiceOption[]> = {
       excludes: ['Refrigerant gas top-up']
     },
     {
-      id: 'ac-gas-refill',
-      categoryId: 'ac_repair',
+      id: resolveServiceOptionUuid('ac-gas-refill'),
+      categoryId: resolveServiceCategoryUuid('ac_repair'),
       name: 'AC Gas Refill / Leak Fix',
       startingPrice: 1499,
       estimatedPriceMin: 1499,
@@ -344,8 +345,8 @@ export const SERVICE_OPTIONS: Record<string, ServiceOption[]> = {
   ],
   cleaning: [
     {
-      id: 'bathroom-clean',
-      categoryId: 'cleaning',
+      id: resolveServiceOptionUuid('bathroom-clean'),
+      categoryId: resolveServiceCategoryUuid('cleaning'),
       name: 'Deep Bathroom Cleaning',
       startingPrice: 149,
       estimatedPriceMin: 149,
@@ -356,8 +357,8 @@ export const SERVICE_OPTIONS: Record<string, ServiceOption[]> = {
       excludes: ['Exhaust fan motor rewiring']
     },
     {
-      id: 'kitchen-clean',
-      categoryId: 'cleaning',
+      id: resolveServiceOptionUuid('kitchen-clean'),
+      categoryId: resolveServiceCategoryUuid('cleaning'),
       name: 'Kitchen Degreasing & Clean',
       startingPrice: 399,
       estimatedPriceMin: 399,
@@ -370,8 +371,8 @@ export const SERVICE_OPTIONS: Record<string, ServiceOption[]> = {
   ],
   ro_water: [
     {
-      id: 'ro-filters',
-      categoryId: 'ro_water',
+      id: resolveServiceOptionUuid('ro-filters'),
+      categoryId: resolveServiceCategoryUuid('ro_water'),
       name: 'Filter Cartridge Replacement',
       startingPrice: 199,
       estimatedPriceMin: 199,
@@ -382,8 +383,8 @@ export const SERVICE_OPTIONS: Record<string, ServiceOption[]> = {
       excludes: ['RO Membrane cylinder']
     },
     {
-      id: 'ro-complete-service',
-      categoryId: 'ro_water',
+      id: resolveServiceOptionUuid('ro-complete-service'),
+      categoryId: resolveServiceCategoryUuid('ro_water'),
       name: 'Complete RO Purifier Service',
       startingPrice: 399,
       estimatedPriceMin: 399,
@@ -396,8 +397,8 @@ export const SERVICE_OPTIONS: Record<string, ServiceOption[]> = {
   ],
   appliance_repair: [
     {
-      id: 'washing-machine',
-      categoryId: 'appliance_repair',
+      id: resolveServiceOptionUuid('washing-machine'),
+      categoryId: resolveServiceCategoryUuid('appliance_repair'),
       name: 'Washing Machine Inspection',
       startingPrice: 199,
       estimatedPriceMin: 199,
@@ -410,8 +411,8 @@ export const SERVICE_OPTIONS: Record<string, ServiceOption[]> = {
   ],
   mason_labour: [
     {
-      id: 'tile-repair',
-      categoryId: 'mason_labour',
+      id: resolveServiceOptionUuid('tile-repair'),
+      categoryId: resolveServiceCategoryUuid('mason_labour'),
       name: 'Tile Fixing & Grout Repair',
       startingPrice: 349,
       estimatedPriceMin: 349,
@@ -424,8 +425,8 @@ export const SERVICE_OPTIONS: Record<string, ServiceOption[]> = {
   ],
   other_services: [
     {
-      id: 'general-handyman',
-      categoryId: 'other_services',
+      id: resolveServiceOptionUuid('general-handyman'),
+      categoryId: resolveServiceCategoryUuid('other_services'),
       name: 'General Handyman Visit',
       startingPrice: 199,
       estimatedPriceMin: 199,
@@ -438,6 +439,14 @@ export const SERVICE_OPTIONS: Record<string, ServiceOption[]> = {
     }
   ]
 };
+
+// Ensure SERVICE_OPTIONS can be indexed by both category slug and authoritative category UUID
+Object.entries({ ...SERVICE_OPTIONS }).forEach(([catSlug, opts]) => {
+  const catUuid = resolveServiceCategoryUuid(catSlug);
+  if (catUuid && catUuid !== catSlug) {
+    SERVICE_OPTIONS[catUuid] = opts;
+  }
+});
 
 export const PROFESSIONALS: Professional[] = [
   {

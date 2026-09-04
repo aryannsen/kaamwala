@@ -159,14 +159,27 @@ export async function reverseGeocodeCoordinates(
   state?: string;
   pincode?: string;
 }> {
-  // Ensure geocoder is instantiated
+  // Ensure geocoder is instantiated using either direct class or importLibrary
   let geocoder = geocoderInstance;
   if (!geocoder) {
-    if (typeof google !== 'undefined' && google.maps && google.maps.Geocoder) {
-      geocoder = new google.maps.Geocoder();
-    } else {
-      throw new Error('Google Maps Geocoder is not loaded yet.');
+    if (typeof google !== 'undefined' && google.maps) {
+      if (google.maps.Geocoder) {
+        geocoder = new google.maps.Geocoder();
+      } else if (typeof google.maps.importLibrary === 'function') {
+        try {
+          const geocodingLib = (await google.maps.importLibrary('geocoding')) as google.maps.GeocodingLibrary;
+          if (geocodingLib && geocodingLib.Geocoder) {
+            geocoder = new geocodingLib.Geocoder();
+          }
+        } catch (e) {
+          console.warn('Could not load geocoding library dynamically:', e);
+        }
+      }
     }
+  }
+
+  if (!geocoder) {
+    throw new Error('Google Maps Geocoder is not loaded yet.');
   }
 
   return new Promise((resolve, reject) => {
@@ -214,13 +227,21 @@ export async function saveAddressToSupabase(
     };
   }
 
+  // Address in Supabase requires an associated customer record.
+  // If no customerId is provided, local storage is used until service request submission.
+  if (!options.customerId) {
+    return {
+      success: true,
+      error: 'Saved locally. Address will be linked upon service request submission.'
+    };
+  }
+
   try {
-    const customerId = options.customerId || getOrCreateCustomerId();
     const label = options.label || location.label || 'Home';
 
     // Prepare payload matching customer_addresses columns
     const payload: SupabaseCustomerAddressRow = {
-      customer_id: customerId,
+      customer_id: options.customerId,
       label,
       address: location.formattedAddress,
       locality: location.locality || null,
@@ -232,10 +253,10 @@ export async function saveAddressToSupabase(
       is_default: options.isDefault ?? true
     };
 
-    const { data, error } = await supabase
+    // Insert without .select() to avoid requiring public SELECT permissions on customer_addresses
+    const { error } = await supabase
       .from('customer_addresses')
-      .insert(payload)
-      .select();
+      .insert(payload);
 
     if (error) {
       console.warn('Supabase customer_addresses insert notice (stored locally):', error.message);
@@ -246,8 +267,7 @@ export async function saveAddressToSupabase(
     }
 
     return {
-      success: true,
-      data
+      success: true
     };
   } catch (err: any) {
     console.warn('Network error saving to customer_addresses:', err?.message);

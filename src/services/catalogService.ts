@@ -13,6 +13,7 @@ import { getCategoryStyle } from '../lib/iconMap';
 // (Clearly isolated here so it can be easily removed prior to production)
 // ============================================================================
 import { SERVICE_CATEGORIES as DEV_CATEGORIES, SERVICE_OPTIONS as DEV_OPTIONS } from '../data/mockDatabase';
+import { resolveServiceCategoryUuid } from '../data/serviceCatalogUuids';
 
 /**
  * Normalizes raw Supabase database row to the application's ServiceCategory interface.

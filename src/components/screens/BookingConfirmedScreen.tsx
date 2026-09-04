@@ -1,145 +1,134 @@
-import React, { useState } from 'react';
-import { Check, ShieldCheck, Copy, Phone, MessageSquare, ArrowRight, CheckCircle2 } from 'lucide-react';
-import { Booking } from '../../types';
+import React from 'react';
+import {
+  CheckCircle2,
+  Home,
+  FileText,
+  Clock,
+  MapPin,
+  PhoneCall,
+  Banknote,
+  Sparkles
+} from 'lucide-react';
+import { CustomerServiceRequest } from '../../services/requestService';
 
 interface BookingConfirmedScreenProps {
-  booking: Booking;
-  onTrackBooking: () => void;
+  request: CustomerServiceRequest;
+  onViewRequests: () => void;
   onHome: () => void;
 }
 
 export const BookingConfirmedScreen: React.FC<BookingConfirmedScreenProps> = ({
-  booking,
-  onTrackBooking,
+  request,
+  onViewRequests,
   onHome
 }) => {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = () => {
-    try {
-      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(booking.bookingCode).catch(() => {});
-      }
-    } catch {}
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleCall = () => {
-    try {
-      window.open(`tel:${booking.professional.phone}`, '_self');
-    } catch {}
-  };
-
-  const handleWhatsApp = () => {
-    try {
-      const text = encodeURIComponent(
-        `Hello ${booking.professional.name}, I booked ${booking.serviceOptionName} (ID: ${booking.bookingCode}) on KaamWala for ${booking.address}.`
-      );
-      window.open(`https://wa.me/91${booking.professional.phone.replace(/[^0-9]/g, '').slice(-10)}?text=${text}`, '_blank', 'noopener,noreferrer');
-    } catch {}
-  };
-
   return (
-    <div className="pb-24 animate-in fade-in duration-150 px-5 pt-3">
-      {/* Success Badge */}
+    <div className="pb-28 animate-in fade-in duration-200 px-5 pt-4">
+      {/* 7. Success Badge & Header */}
       <div className="flex flex-col items-center justify-center text-center my-4">
-        <div className="w-18 h-18 bg-[#10B981] rounded-full flex items-center justify-center text-white shadow-lg mb-3">
-          <Check className="w-10 h-10 stroke-[3]" />
+        <div className="w-18 h-18 bg-[#075B43] rounded-full flex items-center justify-center text-white shadow-lg mb-3">
+          <CheckCircle2 className="w-10 h-10 stroke-[2.5]" />
         </div>
-        <h2 className="text-xl font-extrabold text-[#111817]">Your booking is confirmed!</h2>
-        <p className="text-xs text-[#66706D] font-medium mt-1">
-          {booking.professional.name} is on the way
+        <h2 className="text-2xl font-extrabold text-[#111817]">Request received! 🎉</h2>
+        <p className="text-xs sm:text-sm text-[#66706D] font-medium mt-1.5 max-w-xs mx-auto leading-relaxed">
+          Your service request has been received. Our KaamWala team will review it and contact you shortly.
         </p>
       </div>
 
-      {/* Professional Card */}
-      <div className="bg-white p-3.5 rounded-xl border border-[#E7E9E6] shadow-2xs mb-3 flex items-center gap-3">
-        <img
-          src={booking.professional.photo}
-          alt={booking.professional.name}
-          className="w-13 h-13 rounded-full object-cover shrink-0 border border-gray-100 shadow-2xs"
-        />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <h3 className="text-sm font-bold text-[#111817] truncate">{booking.professional.name}</h3>
-            {booking.professional.verified && (
-              <span className="flex items-center gap-0.5 text-[10px] font-semibold text-[#075B43] bg-[#075B43]/10 px-1.5 py-0.5 rounded">
-                <ShieldCheck className="w-2.5 h-2.5" />
-                Verified
-              </span>
-            )}
+      {/* Service Request Summary Card */}
+      <div className="bg-white p-4 rounded-2xl border border-[#E7E9E6] shadow-2xs mb-4">
+        <div className="flex items-start justify-between pb-3 border-b border-gray-100">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#075B43] bg-[#075B43]/10 px-2 py-0.5 rounded">
+              {request.categoryName}
+            </span>
+            <h3 className="text-base font-bold text-[#111817] mt-1">
+              {request.serviceOptionName}
+            </h3>
           </div>
-          <div className="text-xs text-[#66706D] mt-0.5">{booking.professional.distanceKm} km away</div>
-          <div className="text-xs font-semibold text-[#075B43] flex items-center gap-1 mt-0.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#075B43]" />
-            <span>Arrives in {booking.professional.arrivalEtaMinutes}</span>
+          <div className="text-right">
+            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full capitalize">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse" />
+              {request.status}
+            </span>
+          </div>
+        </div>
+
+        {/* Details Grid */}
+        <div className="mt-3 space-y-2.5 text-xs">
+          {/* Estimated Price */}
+          <div className="flex items-center justify-between text-gray-600">
+            <span className="font-medium">Estimated Price:</span>
+            <span className="font-extrabold text-[#111817]">
+              {request.estimatedMinPrice === request.estimatedMaxPrice
+                ? `₹${request.estimatedMinPrice}`
+                : `₹${request.estimatedMinPrice} – ₹${request.estimatedMaxPrice}`}
+            </span>
+          </div>
+
+          {/* Service Address */}
+          <div className="flex items-start gap-2 pt-2 border-t border-gray-100">
+            <MapPin className="w-4 h-4 text-[#075B43] shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <div className="text-[11px] text-gray-400 font-semibold uppercase tracking-wider">
+                Service Address
+              </div>
+              <div className="text-xs text-[#111817] font-medium mt-0.5 leading-snug">
+                {request.address}
+              </div>
+            </div>
+          </div>
+
+          {/* Payment Method */}
+          <div className="flex items-center gap-2 pt-2 border-t border-gray-100 text-gray-700">
+            <Banknote className="w-4 h-4 text-[#075B43] shrink-0" />
+            <span>Payment: <strong className="font-semibold text-[#111817]">Cash on Service</strong> (Pay after work is done)</span>
           </div>
         </div>
       </div>
 
-      {/* Booking ID Box */}
-      <div className="bg-white p-3.5 rounded-xl border border-[#E7E9E6] shadow-2xs mb-3 flex items-center justify-between">
-        <div>
-          <div className="text-[10px] text-[#66706D] font-medium uppercase tracking-wider">Booking ID</div>
-          <div className="text-sm font-extrabold text-[#111817] font-mono tracking-wide">
-            {booking.bookingCode}
+      {/* What happens next? */}
+      <div className="bg-emerald-50/60 border border-emerald-200 rounded-2xl p-4 mb-6">
+        <h4 className="text-xs font-bold text-emerald-950 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+          <Sparkles className="w-3.5 h-3.5 text-[#075B43]" />
+          What happens next?
+        </h4>
+        <div className="space-y-2 text-xs text-emerald-900 leading-snug">
+          <div className="flex items-start gap-2">
+            <span className="font-bold text-[#075B43]">1.</span>
+            <span>Our Kadi operations team reviews your request.</span>
+          </div>
+          <div className="flex items-start gap-2">
+            <span className="font-bold text-[#075B43]">2.</span>
+            <span>We will call you on <strong className="font-semibold">{request.customerPhone}</strong> to confirm technician visit timing.</span>
+          </div>
+          <div className="flex items-start gap-2">
+            <span className="font-bold text-[#075B43]">3.</span>
+            <span>Verified professional arrives at your doorstep to inspect and complete the job.</span>
           </div>
         </div>
-        <button
-          onClick={handleCopy}
-          className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-black transition-colors"
-          title="Copy booking ID"
-        >
-          {copied ? <Check className="w-4 h-4 text-[#075B43]" /> : <Copy className="w-4 h-4" />}
-        </button>
       </div>
 
-      {/* Notification Note */}
-      <div className="p-3 bg-[#075B43]/5 border border-[#075B43]/20 rounded-xl mb-4 flex items-start gap-2.5">
-        <CheckCircle2 className="w-4 h-4 text-[#075B43] shrink-0 mt-0.5" />
-        <span className="text-xs text-[#075B43] font-medium leading-tight">
-          We will notify you when the KaamWala reaches your location in Kadi.
-        </span>
-      </div>
-
-      {/* Call & WhatsApp Buttons */}
-      <div className="grid grid-cols-2 gap-3 mb-4">
+      {/* Action Buttons */}
+      <div className="space-y-2.5">
         <button
-          id="confirmed-call-btn"
-          onClick={handleCall}
-          className="flex items-center justify-center gap-2 py-3 px-4 bg-white border border-[#E7E9E6] hover:bg-gray-50 rounded-xl text-xs font-bold text-[#111817] shadow-2xs transition-colors"
+          id="view-my-requests-btn"
+          type="button"
+          onClick={onViewRequests}
+          className="w-full py-3 px-4 bg-[#075B43] hover:bg-[#054432] active:bg-[#043426] text-white rounded-xl font-bold text-sm transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer min-h-[44px]"
         >
-          <Phone className="w-4 h-4 text-[#075B43]" />
-          <span>Call</span>
+          <FileText className="w-4 h-4" />
+          <span>View My Requests</span>
         </button>
 
         <button
-          id="confirmed-whatsapp-btn"
-          onClick={handleWhatsApp}
-          className="flex items-center justify-center gap-2 py-3 px-4 bg-[#075B43] hover:bg-[#064635] rounded-xl text-xs font-bold text-white shadow-xs transition-colors"
-        >
-          <MessageSquare className="w-4 h-4 text-[#F5B51B]" />
-          <span>WhatsApp</span>
-        </button>
-      </div>
-
-      {/* Track Booking Button */}
-      <button
-        id="confirmed-track-btn"
-        onClick={onTrackBooking}
-        className="w-full py-3.5 px-4 bg-[#F5B51B] hover:bg-[#E5A817] active:scale-[0.99] text-[#111817] font-bold text-sm rounded-xl transition-all shadow-xs flex items-center justify-center gap-2"
-      >
-        <span>Track Live Booking</span>
-        <ArrowRight className="w-4 h-4" />
-      </button>
-
-      <div className="text-center mt-3">
-        <button
+          id="back-to-home-btn"
+          type="button"
           onClick={onHome}
-          className="text-xs font-semibold text-[#66706D] hover:text-[#111817] underline"
+          className="w-full py-3 px-4 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-[#111817] rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 cursor-pointer min-h-[44px]"
         >
-          Back to Home
+          <Home className="w-4 h-4 text-gray-600" />
+          <span>Back to Home</span>
         </button>
       </div>
     </div>

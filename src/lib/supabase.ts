@@ -1,10 +1,10 @@
 /// <reference types="vite/client" />
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-// Retrieve Supabase credentials safely from Vite environment
+// Retrieve Supabase credentials safely from Vite or process environment
 const env = (typeof import.meta !== 'undefined' && (import.meta as { env?: Record<string, string> }).env) || {};
-const supabaseUrl = (env.VITE_SUPABASE_URL || '').trim();
-const supabaseAnonKey = (env.VITE_SUPABASE_ANON_KEY || '').trim();
+const supabaseUrl = (env.VITE_SUPABASE_URL || (typeof process !== 'undefined' && process.env ? process.env.VITE_SUPABASE_URL : '') || '').trim();
+const supabaseAnonKey = (env.VITE_SUPABASE_ANON_KEY || (typeof process !== 'undefined' && process.env ? process.env.VITE_SUPABASE_ANON_KEY : '') || '').trim();
 
 // Verify that valid Supabase credentials have been configured
 export const isSupabaseConfigured = Boolean(
