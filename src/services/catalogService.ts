@@ -13,7 +13,7 @@ import { getCategoryStyle } from '../lib/iconMap';
 // (Clearly isolated here so it can be easily removed prior to production)
 // ============================================================================
 import { SERVICE_CATEGORIES as DEV_CATEGORIES, SERVICE_OPTIONS as DEV_OPTIONS } from '../data/mockDatabase';
-import { resolveServiceCategoryUuid } from '../data/serviceCatalogUuids';
+import { resolveServiceCategoryUuid, resolveServiceOptionUuid } from '../data/serviceCatalogUuids';
 
 /**
  * Normalizes raw Supabase database row to the application's ServiceCategory interface.
@@ -67,14 +67,14 @@ export function normalizeOptionRow(row: SupabaseServiceOptionRow): ServiceOption
     }
   }
 
-  // Handle price fields: starting_price, min_price, max_price (or estimated_price_min/max)
-  const startingPrice = row.starting_price ?? row.min_price ?? row.estimated_price_min ?? 0;
-  const minPrice = row.min_price ?? row.estimated_price_min ?? startingPrice;
-  const maxPrice = row.max_price ?? row.estimated_price_max ?? minPrice;
+  // Use actual pricing columns: starting_price, min_price, max_price (NO estimated_price_min/max)
+  const startingPrice = row.starting_price ?? (row.min_price ?? 0);
+  const minPrice = row.min_price ?? startingPrice;
+  const maxPrice = row.max_price ?? minPrice;
 
   return {
-    id: String(row.id),
-    categoryId: String(row.category_id),
+    id: resolveServiceOptionUuid(String(row.id)),
+    categoryId: resolveServiceCategoryUuid(String(row.category_id)),
     name: row.name,
     startingPrice,
     estimatedPriceMin: minPrice,
@@ -271,7 +271,8 @@ export async function fetchServiceOptions(
         .order('display_order', { ascending: true });
 
       if (categoryId) {
-        query = query.eq('category_id', categoryId);
+        const resolvedCategoryUuid = resolveServiceCategoryUuid(categoryId);
+        query = query.eq('category_id', resolvedCategoryUuid);
       }
 
       const { data, error } = await query;
@@ -334,7 +335,14 @@ function getFallbackOptions(categoryId?: string, errorMessage?: string | null): 
   let fallbackList: ServiceOption[] = [];
 
   if (categoryId) {
-    fallbackList = DEV_OPTIONS[categoryId] || [];
+    const resolvedCatUuid = resolveServiceCategoryUuid(categoryId);
+    const allOptions = Object.values(DEV_OPTIONS).flat();
+    fallbackList = allOptions.filter(
+      (opt) => opt.categoryId === categoryId || opt.categoryId === resolvedCatUuid
+    );
+    if (fallbackList.length === 0 && DEV_OPTIONS[categoryId]) {
+      fallbackList = DEV_OPTIONS[categoryId];
+    }
   } else {
     fallbackList = Object.values(DEV_OPTIONS).flat();
   }

@@ -19,6 +19,7 @@ import {
   persistCustomerLocationToSupabase
 } from './services/locationService';
 import { CustomerServiceRequest } from './services/requestService';
+import { resolveServiceOptionUuid } from './data/serviceCatalogUuids';
 import { Header } from './components/common/Header';
 import { BottomNavigation, NavTab } from './components/common/BottomNavigation';
 import { LocationModal } from './components/common/LocationModal';
@@ -175,7 +176,11 @@ export default function App() {
 
   // Flow Step 3: User picks specific job (e.g. Tap Repair / Leakage)
   const handleSelectOption = (opt: ServiceOption) => {
-    setSelectedOption(opt);
+    const optionUuid = resolveServiceOptionUuid(opt.id);
+    setSelectedOption({
+      ...opt,
+      id: optionUuid
+    });
     setCurrentScreen('REQUEST_SERVICE');
   };
 

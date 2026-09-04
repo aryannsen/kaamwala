@@ -10,6 +10,7 @@ import {
   SupabaseServiceRequestRow
 } from '../types/database';
 import { CustomerLocation } from '../types';
+import { resolveServiceOptionUuid } from '../data/serviceCatalogUuids';
 
 export interface ServiceRequestSubmission {
   customerName: string;
@@ -252,6 +253,25 @@ export async function submitServiceRequest(
   const cleanState = submission.location?.state?.trim() || null;
   const cleanPincode = submission.location?.pincode?.trim() || null;
 
+  // Validate and resolve service_option_id to an authoritative UUID (preserving schema integrity)
+  const serviceOptionUuid = resolveServiceOptionUuid(submission.serviceOptionId);
+  if (!isValidUuid(serviceOptionUuid)) {
+    return {
+      success: false,
+      request: null as any,
+      supabaseError: `Invalid service option identifier: "${submission.serviceOptionId}". A valid UUID is required.`
+    };
+  }
+
+  // Strictly enforce Supabase persistence (do not use localStorage as a persistence fallback)
+  if (!isSupabaseConfigured || !supabase) {
+    return {
+      success: false,
+      request: null as any,
+      supabaseError: 'Supabase database is not connected. Please verify your environment configuration.'
+    };
+  }
+
   let finalRequestId = generateSecureUuid();
   let finalCustomerId = generateSecureUuid();
   let finalAddressId = generateSecureUuid();
@@ -259,142 +279,140 @@ export async function submitServiceRequest(
   let finalMaxPrice = submission.estimatedMaxPrice;
   let supabaseErrorMsg: string | null = null;
 
-  if (isSupabaseConfigured && supabase) {
-    let rpcSucceeded = false;
-    let directInsertSucceeded = false;
+  let rpcSucceeded = false;
+  let directInsertSucceeded = false;
 
-    // A. Attempt secure server-side RPC transaction first (calculates authoritative pricing server-side)
-    const rpcPayload = {
-      p_customer_name: cleanName,
-      p_customer_phone: cleanPhone,
-      p_address: cleanAddress,
-      p_locality: cleanLocality,
-      p_city: cleanCity,
-      p_state: cleanState,
-      p_pincode: cleanPincode,
-      p_latitude: cleanLat,
-      p_longitude: cleanLng,
-      p_service_option_id: submission.serviceOptionId,
-      p_problem_description: submission.problemDescription?.trim() || null,
-      p_photo_url: submission.photoUrl?.trim() || null
-    };
+  // A. Attempt secure server-side RPC transaction first (calculates authoritative pricing server-side)
+  const rpcPayload = {
+    p_customer_name: cleanName,
+    p_customer_phone: cleanPhone,
+    p_address: cleanAddress,
+    p_locality: cleanLocality,
+    p_city: cleanCity,
+    p_state: cleanState,
+    p_pincode: cleanPincode,
+    p_latitude: cleanLat,
+    p_longitude: cleanLng,
+    p_service_option_id: serviceOptionUuid,
+    p_problem_description: submission.problemDescription?.trim() || null,
+    p_photo_url: submission.photoUrl?.trim() || null
+  };
 
-    console.log('[submit_service_request] Invoking RPC with payload:', rpcPayload);
+  console.log('[submit_service_request] Invoking RPC with payload:', rpcPayload);
 
+  try {
+    const { data: rpcData, error: rpcError } = await supabase.rpc('submit_service_request', rpcPayload);
+
+    console.log('[submit_service_request] RPC response:', { data: rpcData, error: rpcError });
+
+    if (!rpcError && rpcData) {
+      rpcSucceeded = true;
+      if (rpcData.request_id) finalRequestId = rpcData.request_id;
+      if (rpcData.customer_id) finalCustomerId = rpcData.customer_id;
+      if (rpcData.address_id) finalAddressId = rpcData.address_id;
+      if (rpcData.estimated_min_price !== undefined) {
+        finalMinPrice = Number(rpcData.estimated_min_price);
+      }
+      if (rpcData.estimated_max_price !== undefined) {
+        finalMaxPrice = Number(rpcData.estimated_max_price);
+      }
+      supabaseErrorMsg = null;
+    } else if (rpcError) {
+      console.error('[submit_service_request] RPC error returned:', rpcError);
+      supabaseErrorMsg = rpcError.message;
+    }
+  } catch (err: any) {
+    console.error('[submit_service_request] RPC invocation exception:', err);
+    supabaseErrorMsg = err?.message || 'RPC invocation failed';
+  }
+
+  // B. Direct Insert Fallback (if RPC not yet created in Supabase SQL editor)
+  if (!rpcSucceeded) {
+    console.warn('[submit_service_request] RPC did not succeed; attempting direct insert fallback...');
     try {
-      const { data: rpcData, error: rpcError } = await supabase.rpc('submit_service_request', rpcPayload);
-
-      console.log('[submit_service_request] RPC response:', { data: rpcData, error: rpcError });
-
-      if (!rpcError && rpcData) {
-        rpcSucceeded = true;
-        if (rpcData.request_id) finalRequestId = rpcData.request_id;
-        if (rpcData.customer_id) finalCustomerId = rpcData.customer_id;
-        if (rpcData.address_id) finalAddressId = rpcData.address_id;
-        if (rpcData.estimated_min_price !== undefined) {
-          finalMinPrice = Number(rpcData.estimated_min_price);
-        }
-        if (rpcData.estimated_max_price !== undefined) {
-          finalMaxPrice = Number(rpcData.estimated_max_price);
-        }
-        supabaseErrorMsg = null;
-      } else if (rpcError) {
-        console.error('[submit_service_request] RPC error returned:', rpcError);
-        supabaseErrorMsg = rpcError.message;
-      }
-    } catch (err: any) {
-      console.error('[submit_service_request] RPC invocation exception:', err);
-      supabaseErrorMsg = err?.message || 'RPC invocation failed';
-    }
-
-    // B. Direct Insert Fallback (if RPC not yet created in Supabase SQL editor)
-    if (!rpcSucceeded) {
-      console.warn('[submit_service_request] RPC did not succeed; attempting direct insert fallback...');
-      try {
-        // 1. Insert customer without calling .select()
-        const custPayload = {
-          id: finalCustomerId,
-          name: cleanName,
-          phone: cleanPhone
-        };
-        const { error: custErr } = await supabase
-          .from('customers')
-          .insert(custPayload);
-
-        if (custErr) {
-          console.error('[submit_service_request] Direct customer insert error:', custErr);
-        }
-
-        // 2. Insert customer address without calling .select()
-        const addressPayload: SupabaseCustomerAddressRow = {
-          id: finalAddressId,
-          customer_id: finalCustomerId,
-          label: submission.location.label || 'Service Address',
-          address: cleanAddress,
-          locality: cleanLocality,
-          city: cleanCity,
-          state: cleanState,
-          pincode: cleanPincode,
-          latitude: cleanLat ?? 0,
-          longitude: cleanLng ?? 0,
-          is_default: true
-        };
-        const { error: addrErr } = await supabase
-          .from('customer_addresses')
-          .insert(addressPayload);
-
-        if (addrErr) {
-          console.error('[submit_service_request] Direct address insert error:', addrErr);
-        }
-
-        // 3. Insert service request without calling .select()
-        const requestPayload: SupabaseServiceRequestRow = {
-          id: finalRequestId,
-          customer_id: finalCustomerId,
-          service_option_id: submission.serviceOptionId,
-          address_id: finalAddressId,
-          problem_description: submission.problemDescription?.trim() || null,
-          photo_url: submission.photoUrl?.trim() || null,
-          estimated_min_price: finalMinPrice,
-          estimated_max_price: finalMaxPrice,
-          payment_method: 'cash_on_service',
-          status: 'requested'
-        };
-        const { error: reqErr } = await supabase
-          .from('service_requests')
-          .insert(requestPayload);
-
-        if (reqErr) {
-          console.error('[submit_service_request] Direct service request insert error:', reqErr);
-          supabaseErrorMsg = reqErr.message;
-        } else {
-          directInsertSucceeded = true;
-          supabaseErrorMsg = null;
-
-          // 4. Insert status history
-          await supabase
-            .from('request_status_history')
-            .insert({
-              request_id: finalRequestId,
-              status: 'requested'
-            });
-        }
-      } catch (directErr: any) {
-        console.error('[submit_service_request] Direct insert flow exception:', directErr);
-        supabaseErrorMsg = directErr?.message || 'Direct insert exception';
-      }
-    }
-
-    const persistedToSupabase = rpcSucceeded || directInsertSucceeded;
-
-    if (!persistedToSupabase) {
-      console.error('[submit_service_request] CRITICAL: Service request was NOT persisted to Supabase database. Reason:', supabaseErrorMsg);
-      return {
-        success: false,
-        request: null as any,
-        supabaseError: supabaseErrorMsg || 'Database submission failed. The service request was not persisted to Supabase.'
+      // 1. Insert customer without calling .select()
+      const custPayload = {
+        id: finalCustomerId,
+        name: cleanName,
+        phone: cleanPhone
       };
+      const { error: custErr } = await supabase
+        .from('customers')
+        .insert(custPayload);
+
+      if (custErr) {
+        console.error('[submit_service_request] Direct customer insert error:', custErr);
+      }
+
+      // 2. Insert customer address without calling .select()
+      const addressPayload: SupabaseCustomerAddressRow = {
+        id: finalAddressId,
+        customer_id: finalCustomerId,
+        label: submission.location.label || 'Service Address',
+        address: cleanAddress,
+        locality: cleanLocality,
+        city: cleanCity,
+        state: cleanState,
+        pincode: cleanPincode,
+        latitude: cleanLat ?? 0,
+        longitude: cleanLng ?? 0,
+        is_default: true
+      };
+      const { error: addrErr } = await supabase
+        .from('customer_addresses')
+        .insert(addressPayload);
+
+      if (addrErr) {
+        console.error('[submit_service_request] Direct address insert error:', addrErr);
+      }
+
+      // 3. Insert service request with validated UUID foreign key intact
+      const requestPayload: SupabaseServiceRequestRow = {
+        id: finalRequestId,
+        customer_id: finalCustomerId,
+        service_option_id: serviceOptionUuid,
+        address_id: finalAddressId,
+        problem_description: submission.problemDescription?.trim() || null,
+        photo_url: submission.photoUrl?.trim() || null,
+        estimated_min_price: finalMinPrice,
+        estimated_max_price: finalMaxPrice,
+        payment_method: 'cash_on_service',
+        status: 'requested'
+      };
+      const { error: reqErr } = await supabase
+        .from('service_requests')
+        .insert(requestPayload);
+
+      if (reqErr) {
+        console.error('[submit_service_request] Direct service request insert error:', reqErr);
+        supabaseErrorMsg = reqErr.message;
+      } else {
+        directInsertSucceeded = true;
+        supabaseErrorMsg = null;
+
+        // 4. Insert status history
+        await supabase
+          .from('request_status_history')
+          .insert({
+            request_id: finalRequestId,
+            status: 'requested'
+          });
+      }
+    } catch (directErr: any) {
+      console.error('[submit_service_request] Direct insert flow exception:', directErr);
+      supabaseErrorMsg = directErr?.message || 'Direct insert exception';
     }
+  }
+
+  const persistedToSupabase = rpcSucceeded || directInsertSucceeded;
+
+  if (!persistedToSupabase) {
+    console.error('[submit_service_request] CRITICAL: Service request was NOT persisted to Supabase database. Reason:', supabaseErrorMsg);
+    return {
+      success: false,
+      request: null as any,
+      supabaseError: supabaseErrorMsg || 'Database submission failed. The service request was not persisted to Supabase.'
+    };
   }
 
   // Construct standardized client-side request object
@@ -403,7 +421,7 @@ export async function submitServiceRequest(
     customerId: finalCustomerId,
     customerName: cleanName,
     customerPhone: cleanPhone,
-    serviceOptionId: submission.serviceOptionId,
+    serviceOptionId: serviceOptionUuid,
     serviceOptionName: submission.serviceOptionName,
     categoryName: submission.categoryName || 'Home Service',
     addressId: finalAddressId,
@@ -418,7 +436,7 @@ export async function submitServiceRequest(
     createdAt: now
   };
 
-  // Only persist to local storage when actually persisted to database (or in offline/local mock mode)
+  // Only store locally once successfully persisted in Supabase database
   storeRequestLocally(clientRequest);
 
   return {
@@ -487,8 +505,15 @@ export async function fetchCustomerRequests(
           return {
             ...local,
             status: match.status || local.status,
-            estimatedMinPrice: match.estimated_min_price ?? local.estimatedMinPrice,
-            estimatedMaxPrice: match.estimated_max_price ?? local.estimatedMaxPrice
+            serviceOptionId: match.service_option_id || local.serviceOptionId,
+            serviceOptionName: match.service_option_name || local.serviceOptionName,
+            categoryName: match.category_name || local.categoryName,
+            estimatedMinPrice: match.estimated_min_price !== null && match.estimated_min_price !== undefined
+              ? Number(match.estimated_min_price)
+              : local.estimatedMinPrice,
+            estimatedMaxPrice: match.estimated_max_price !== null && match.estimated_max_price !== undefined
+              ? Number(match.estimated_max_price)
+              : local.estimatedMaxPrice
           };
         }
         return local;

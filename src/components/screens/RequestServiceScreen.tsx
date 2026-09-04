@@ -22,6 +22,7 @@ import {
   uploadProblemPhoto,
   CustomerServiceRequest
 } from '../../services/requestService';
+import { resolveServiceOptionUuid, isValidUuid } from '../../data/serviceCatalogUuids';
 
 interface RequestServiceScreenProps {
   category: ServiceCategory;
@@ -174,12 +175,20 @@ export const RequestServiceScreen: React.FC<RequestServiceScreenProps> = ({
         address: customerLocation.formattedAddress
       });
 
+      // Ensure the service_option_id passed to submit_service_request is strictly the actual UUID, not a slug
+      const actualOptionUuid = resolveServiceOptionUuid(option.id);
+      if (!isValidUuid(actualOptionUuid)) {
+        setSubmitError('Invalid service option selected. Please select a service again.');
+        setIsSubmitting(false);
+        return;
+      }
+
       // Submit to Supabase via requestService
       const result = await submitServiceRequest({
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         location: customerLocation,
-        serviceOptionId: option.id,
+        serviceOptionId: actualOptionUuid,
         serviceOptionName: option.name,
         categoryName: category.name,
         problemDescription: problemDescription.trim() || undefined,

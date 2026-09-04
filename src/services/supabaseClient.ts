@@ -13,6 +13,7 @@ import {
   KADI_LOCALITIES,
   PROFESSIONALS
 } from '../data/mockDatabase';
+import { resolveServiceOptionUuid, resolveServiceCategoryUuid } from '../data/serviceCatalogUuids';
 import {
   fetchServiceCategories,
   fetchServiceOptions,
@@ -76,9 +77,9 @@ const SEED_BOOKINGS: Booking[] = [
     customerName: 'Aryan Verma',
     customerPhone: '98765 43210',
     address: 'B-14, Swastik Society, Near Fuwara Chowk, Kadi, Gujarat 382715',
-    categoryId: 'plumbing',
+    categoryId: resolveServiceCategoryUuid('plumbing'),
     categoryName: 'Plumbing',
-    serviceOptionId: 'tap-repair',
+    serviceOptionId: resolveServiceOptionUuid('tap-repair'),
     serviceOptionName: 'Tap Repair / Leakage',
     professional: PROFESSIONALS[0], // Ramesh Patel
     estimatedPrice: 499,
@@ -101,9 +102,9 @@ const SEED_BOOKINGS: Booking[] = [
     customerName: 'Aryan Verma',
     customerPhone: '98765 43210',
     address: 'B-14, Swastik Society, Near Fuwara Chowk, Kadi, Gujarat 382715',
-    categoryId: 'electrical',
+    categoryId: resolveServiceCategoryUuid('electrical'),
     categoryName: 'Electrical',
-    serviceOptionId: 'fan-repair',
+    serviceOptionId: resolveServiceOptionUuid('fan-repair'),
     serviceOptionName: 'Fan Repair / Installation',
     professional: PROFESSIONALS[2], // Jignesh Prajapati
     estimatedPrice: 299,
@@ -128,9 +129,9 @@ const SEED_BOOKINGS: Booking[] = [
     customerName: 'Aryan Verma',
     customerPhone: '98765 43210',
     address: 'B-14, Swastik Society, Near Fuwara Chowk, Kadi, Gujarat 382715',
-    categoryId: 'carpentry',
+    categoryId: resolveServiceCategoryUuid('carpentry'),
     categoryName: 'Carpentry',
-    serviceOptionId: 'door-lock',
+    serviceOptionId: resolveServiceOptionUuid('door-lock'),
     serviceOptionName: 'Door Lock Repair / Change',
     professional: PROFESSIONALS[3], // Arvind Panchal
     estimatedPrice: 799,

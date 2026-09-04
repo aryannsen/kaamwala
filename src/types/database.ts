@@ -34,8 +34,6 @@ export interface SupabaseServiceOptionRow {
   starting_price?: number | null;
   min_price?: number | null;
   max_price?: number | null;
-  estimated_price_min?: number | null;
-  estimated_price_max?: number | null;
   duration_estimate?: string | null;
   includes?: string[] | string | null;
   excludes?: string[] | string | null;
