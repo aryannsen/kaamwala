@@ -1,7 +1,40 @@
+// Production database contracts & RPC types
+export {
+  VALID_REQUEST_STATUSES,
+  isValidRequestStatus,
+  REQUEST_STATUS_CONFIG,
+  getRequestStatusDisplay,
+  formatEtaDisplay
+} from './database';
+
+export type {
+  RequestStatus,
+  RequestStatusDisplayConfig,
+  PricingType,
+  ProductionRequestStatus,
+  ProductionPricingType,
+  ServiceRequest,
+  Customer,
+  CustomerAddress,
+  RequestAssignment,
+  RequestStatusHistory,
+  Review,
+  CustomerRequestStatusDetail,
+  CreateServiceRequestParams,
+  GetServiceRequestIdentityParams,
+  ServiceRequestIdentity,
+  GetServiceRequestStatusParams,
+  CreateServiceReviewParams
+} from './database';
+
 export type BookingStatus =
   | 'REQUESTED'
+  | 'REVIEWING'
   | 'CONFIRMING'
   | 'CONFIRMED'
+  | 'PROFESSIONAL_CONFIRMED'
+  | 'ASSIGNED'
+  | 'CUSTOMER_CONTACTED'
   | 'ON_THE_WAY'
   | 'ARRIVED'
   | 'WORK_STARTED'
@@ -128,3 +161,9 @@ export interface Booking {
   reviewTags?: string[];
   uploadedPhotoUrl?: string;
 }
+
+// Legacy UI compatibility aliases
+export type LegacyBooking = Booking;
+export type LegacyProfessional = Professional;
+export type LegacyServiceCategory = ServiceCategory;
+export type LegacyServiceOption = ServiceOption;

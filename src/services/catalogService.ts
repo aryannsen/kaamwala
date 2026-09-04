@@ -13,7 +13,12 @@ import { getCategoryStyle } from '../lib/iconMap';
 // (Clearly isolated here so it can be easily removed prior to production)
 // ============================================================================
 import { SERVICE_CATEGORIES as DEV_CATEGORIES, SERVICE_OPTIONS as DEV_OPTIONS } from '../data/mockDatabase';
-import { resolveServiceCategoryUuid, resolveServiceOptionUuid } from '../data/serviceCatalogUuids';
+import {
+  resolveServiceCategoryUuid,
+  resolveServiceOptionUuid,
+  registerDynamicCategoryUuid,
+  registerDynamicOptionUuid
+} from '../data/serviceCatalogUuids';
 
 /**
  * Normalizes raw Supabase database row to the application's ServiceCategory interface.
@@ -21,6 +26,11 @@ import { resolveServiceCategoryUuid, resolveServiceOptionUuid } from '../data/se
 export function normalizeCategoryRow(row: SupabaseServiceCategoryRow): ServiceCategory {
   const iconKey = row.icon || row.icon_name || row.name;
   const style = getCategoryStyle(row.id || row.name, row.bg_tint, row.icon_color);
+
+  // Register real database UUID mapping dynamically
+  if (row.id && row.name) {
+    registerDynamicCategoryUuid(row.name, String(row.id));
+  }
 
   // Compute starting price from db column
   const startingPrice = row.starting_price ?? (row.min_price ?? 0);
@@ -42,6 +52,10 @@ export function normalizeCategoryRow(row: SupabaseServiceCategoryRow): ServiceCa
  * Normalizes raw Supabase database row to the application's ServiceOption interface.
  */
 export function normalizeOptionRow(row: SupabaseServiceOptionRow): ServiceOption {
+  // Register real database UUID mapping dynamically
+  if (row.id && row.name) {
+    registerDynamicOptionUuid(row.name, String(row.id));
+  }
   // Parse includes/excludes if stored as json or comma-separated string
   let parsedIncludes: string[] = [];
   if (Array.isArray(row.includes)) {

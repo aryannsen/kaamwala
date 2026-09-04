@@ -109,3 +109,22 @@ export function resolveServiceCategoryUuid(idOrSlug: string): string {
 export function isValidUuid(id: string): boolean {
   return Boolean(id && UUID_REGEX.test(id.trim()));
 }
+
+/**
+ * Dynamic UUID registry for service categories and options.
+ * Allows live Supabase catalog queries to register real database UUIDs
+ * so the application is ready for dynamic Supabase IDs without hardcoded seed dependencies.
+ */
+export function registerDynamicCategoryUuid(slugOrName: string, uuid: string): void {
+  if (slugOrName && uuid && isValidUuid(uuid)) {
+    CATEGORY_SLUG_MAP.set(slugOrName.toLowerCase().trim(), uuid.trim());
+    CATEGORY_UUID_MAP.set(uuid.trim(), slugOrName.toLowerCase().trim());
+  }
+}
+
+export function registerDynamicOptionUuid(slugOrName: string, uuid: string): void {
+  if (slugOrName && uuid && isValidUuid(uuid)) {
+    OPTION_SLUG_MAP.set(slugOrName.toLowerCase().trim(), uuid.trim());
+    OPTION_UUID_MAP.set(uuid.trim(), slugOrName.toLowerCase().trim());
+  }
+}

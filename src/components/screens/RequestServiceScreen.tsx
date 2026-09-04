@@ -175,7 +175,7 @@ export const RequestServiceScreen: React.FC<RequestServiceScreenProps> = ({
         address: customerLocation.formattedAddress
       });
 
-      // Ensure the service_option_id passed to submit_service_request is strictly the actual UUID, not a slug
+      // Ensure the service_option_id passed to create_service_request is strictly the actual UUID, not a slug
       const actualOptionUuid = resolveServiceOptionUuid(option.id);
       if (!isValidUuid(actualOptionUuid)) {
         setSubmitError('Invalid service option selected. Please select a service again.');

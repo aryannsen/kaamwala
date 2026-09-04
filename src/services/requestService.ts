@@ -7,7 +7,15 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import {
   SupabaseCustomerAddressRow,
-  SupabaseServiceRequestRow
+  SupabaseServiceRequestRow,
+  ServiceRequest,
+  RequestStatus,
+  isValidRequestStatus,
+  CreateServiceRequestParams,
+  CustomerRequestStatusDetail,
+  GetServiceRequestStatusParams,
+  GetServiceRequestIdentityParams,
+  ServiceRequestIdentity
 } from '../types/database';
 import { CustomerLocation } from '../types';
 import { resolveServiceOptionUuid } from '../data/serviceCatalogUuids';
@@ -27,21 +35,32 @@ export interface ServiceRequestSubmission {
 
 export interface CustomerServiceRequest {
   id: string;
-  customerId: string;
+  requestId?: string;
+  bookingCode?: string;
+  customerId?: string;
   customerName?: string;
   customerPhone?: string;
-  serviceOptionId: string;
-  serviceOptionName: string;
-  categoryName: string;
+  serviceOptionId?: string;
+  serviceOptionName?: string;
+  serviceName?: string;
+  categoryName?: string;
   addressId?: string;
-  address: string;
+  address?: string;
   locality?: string;
   problemDescription?: string;
   photoUrl?: string;
-  estimatedMinPrice: number;
-  estimatedMaxPrice: number;
-  paymentMethod: string;
-  status: string; // 'requested', 'confirmed', etc.
+  estimatedMinPrice?: number;
+  estimatedMaxPrice?: number;
+  estimatedPrice?: number | null;
+  confirmedPrice?: number | null;
+  professionalName?: string | null;
+  professionalPhoto?: string | null;
+  professionalRating?: number | null;
+  professionalCompletedJobs?: number | null;
+  estimatedArrivalAt?: string | null;
+  assignedAt?: string | null;
+  paymentMethod?: string;
+  status: RequestStatus | string;
   createdAt: string;
 }
 
@@ -181,12 +200,12 @@ export async function uploadProblemPhoto(
 
 /**
  * 2. Submit Service Request:
- * Primary Path: Calls atomic PostgreSQL RPC `submit_service_request` with SECURITY DEFINER.
- * This ensures customer deduplication, address linking, request creation, and initial status history
- * happen in ONE atomic server transaction with zero public customer exposure.
+ * Production Path: Invokes PostgreSQL RPC `create_service_request` with exact production parameters.
+ * This is the authoritative backend function shared with the Admin Portal, creating the service_request
+ * with status 'REQUESTED' and triggering admin workflow.
  *
- * Fallback Path: If RPC is not installed, executes direct sanitized INSERTs with client-generated UUIDs
- * and NO `.select()` calls (compatible with strict zero-SELECT RLS policies).
+ * Does not generate fake booking codes or mock statuses on the client.
+ * Does not fall back to unverified mock requests on failure.
  */
 export async function submitServiceRequest(
   submission: ServiceRequestSubmission
@@ -249,9 +268,10 @@ export async function submitServiceRequest(
   const cleanLat = hasValidCoords ? rawLat : null;
   const cleanLng = hasValidCoords ? rawLng : null;
   const cleanLocality = submission.location?.locality?.trim() || null;
-  const cleanCity = submission.location?.city?.trim() || null;
-  const cleanState = submission.location?.state?.trim() || null;
-  const cleanPincode = submission.location?.pincode?.trim() || null;
+  const cleanCity = submission.location?.city?.trim() || 'Kadi';
+  const cleanArea = cleanLocality || cleanCity || 'Kadi';
+  const cleanState = submission.location?.state?.trim() || 'Gujarat';
+  const cleanPincode = submission.location?.pincode?.trim() || '382715';
 
   // Validate and resolve service_option_id to an authoritative UUID (preserving schema integrity)
   const serviceOptionUuid = resolveServiceOptionUuid(submission.serviceOptionId);
@@ -263,31 +283,21 @@ export async function submitServiceRequest(
     };
   }
 
-  // Strictly enforce Supabase persistence (do not use localStorage as a persistence fallback)
+  // If Supabase is not configured, do NOT fake success — notify the user
   if (!isSupabaseConfigured || !supabase) {
     return {
       success: false,
       request: null as any,
-      supabaseError: 'Supabase database is not connected. Please verify your environment configuration.'
+      supabaseError: 'Database connection is not configured. Please check your Supabase connection settings.'
     };
   }
 
-  let finalRequestId = generateSecureUuid();
-  let finalCustomerId = generateSecureUuid();
-  let finalAddressId = generateSecureUuid();
-  let finalMinPrice = submission.estimatedMinPrice;
-  let finalMaxPrice = submission.estimatedMaxPrice;
-  let supabaseErrorMsg: string | null = null;
-
-  let rpcSucceeded = false;
-  let directInsertSucceeded = false;
-
-  // A. Attempt secure server-side RPC transaction first (calculates authoritative pricing server-side)
-  const rpcPayload = {
+  // Build exact production RPC payload matching CreateServiceRequestParams
+  const rpcPayload: CreateServiceRequestParams = {
     p_customer_name: cleanName,
     p_customer_phone: cleanPhone,
-    p_address: cleanAddress,
-    p_locality: cleanLocality,
+    p_address_line: cleanAddress,
+    p_area: cleanArea,
     p_city: cleanCity,
     p_state: cleanState,
     p_pincode: cleanPincode,
@@ -295,162 +305,319 @@ export async function submitServiceRequest(
     p_longitude: cleanLng,
     p_service_option_id: serviceOptionUuid,
     p_problem_description: submission.problemDescription?.trim() || null,
-    p_photo_url: submission.photoUrl?.trim() || null
+    p_problem_photos: submission.photoUrl?.trim() ? [{ url: submission.photoUrl.trim() }] : [],
+    p_customer_notes: null
   };
 
-  console.log('[submit_service_request] Invoking RPC with payload:', rpcPayload);
+  console.log('[create_service_request] Invoking production RPC with payload:', rpcPayload);
 
   try {
-    const { data: rpcData, error: rpcError } = await supabase.rpc('submit_service_request', rpcPayload);
+    const { data: createdRequestId, error: rpcError } = await supabase.rpc(
+      'create_service_request',
+      rpcPayload
+    );
 
-    console.log('[submit_service_request] RPC response:', { data: rpcData, error: rpcError });
+    console.log('[create_service_request] RPC response:', { data: createdRequestId, error: rpcError });
 
-    if (!rpcError && rpcData) {
-      rpcSucceeded = true;
-      if (rpcData.request_id) finalRequestId = rpcData.request_id;
-      if (rpcData.customer_id) finalCustomerId = rpcData.customer_id;
-      if (rpcData.address_id) finalAddressId = rpcData.address_id;
-      if (rpcData.estimated_min_price !== undefined) {
-        finalMinPrice = Number(rpcData.estimated_min_price);
-      }
-      if (rpcData.estimated_max_price !== undefined) {
-        finalMaxPrice = Number(rpcData.estimated_max_price);
-      }
-      supabaseErrorMsg = null;
-    } else if (rpcError) {
-      console.error('[submit_service_request] RPC error returned:', rpcError);
-      supabaseErrorMsg = rpcError.message;
+    if (rpcError || !createdRequestId) {
+      console.error('[create_service_request] RPC error returned:', rpcError);
+      return {
+        success: false,
+        request: null as any,
+        supabaseError: rpcError?.message || 'Failed to submit service request. Please try again.'
+      };
     }
+
+    const finalRequestId = typeof createdRequestId === 'string' ? createdRequestId : String(createdRequestId);
+
+    // After receiving genuine UUID, retrieve authoritative booking identity
+    console.log('[get_service_request_identity] Fetching booking identity for request:', finalRequestId);
+    const identityResult = await fetchServiceRequestIdentity(finalRequestId, cleanPhone);
+
+    if (!identityResult.success || !identityResult.identity?.booking_code) {
+      console.error('[get_service_request_identity] Identity lookup failed:', identityResult.error);
+      return {
+        success: false,
+        request: null as any,
+        supabaseError: identityResult.error || 'Failed to verify booking identity with database. Please try again.'
+      };
+    }
+
+    const finalBookingCode = identityResult.identity.booking_code;
+
+    // Construct standardized client request starting with backend status REQUESTED and genuine bookingCode
+    const confirmedRequest: CustomerServiceRequest = {
+      id: finalRequestId,
+      requestId: finalRequestId,
+      bookingCode: finalBookingCode,
+      customerId: '',
+      customerName: cleanName,
+      customerPhone: cleanPhone,
+      serviceOptionId: serviceOptionUuid,
+      serviceOptionName: submission.serviceOptionName,
+      serviceName: submission.serviceOptionName,
+      categoryName: submission.categoryName || 'Home Service',
+      address: cleanAddress,
+      locality: cleanArea,
+      problemDescription: submission.problemDescription?.trim(),
+      photoUrl: submission.photoUrl?.trim(),
+      estimatedMinPrice: undefined,
+      estimatedMaxPrice: undefined,
+      estimatedPrice: null,
+      confirmedPrice: null,
+      professionalName: null,
+      professionalPhoto: null,
+      professionalRating: null,
+      professionalCompletedJobs: null,
+      estimatedArrivalAt: null,
+      assignedAt: null,
+      paymentMethod: 'cash_on_service',
+      status: 'REQUESTED',
+      createdAt: now
+    };
+
+    // Store only genuine confirmed request locally for migration compatibility
+    storeRequestLocally(confirmedRequest);
+
+    return {
+      success: true,
+      request: confirmedRequest,
+      supabaseError: null
+    };
   } catch (err: any) {
-    console.error('[submit_service_request] RPC invocation exception:', err);
-    supabaseErrorMsg = err?.message || 'RPC invocation failed';
-  }
-
-  // B. Direct Insert Fallback (if RPC not yet created in Supabase SQL editor)
-  if (!rpcSucceeded) {
-    console.warn('[submit_service_request] RPC did not succeed; attempting direct insert fallback...');
-    try {
-      // 1. Insert customer without calling .select()
-      const custPayload = {
-        id: finalCustomerId,
-        name: cleanName,
-        phone: cleanPhone
-      };
-      const { error: custErr } = await supabase
-        .from('customers')
-        .insert(custPayload);
-
-      if (custErr) {
-        console.error('[submit_service_request] Direct customer insert error:', custErr);
-      }
-
-      // 2. Insert customer address without calling .select()
-      const addressPayload: SupabaseCustomerAddressRow = {
-        id: finalAddressId,
-        customer_id: finalCustomerId,
-        label: submission.location.label || 'Service Address',
-        address: cleanAddress,
-        locality: cleanLocality,
-        city: cleanCity,
-        state: cleanState,
-        pincode: cleanPincode,
-        latitude: cleanLat ?? 0,
-        longitude: cleanLng ?? 0,
-        is_default: true
-      };
-      const { error: addrErr } = await supabase
-        .from('customer_addresses')
-        .insert(addressPayload);
-
-      if (addrErr) {
-        console.error('[submit_service_request] Direct address insert error:', addrErr);
-      }
-
-      // 3. Insert service request with validated UUID foreign key intact
-      const requestPayload: SupabaseServiceRequestRow = {
-        id: finalRequestId,
-        customer_id: finalCustomerId,
-        service_option_id: serviceOptionUuid,
-        address_id: finalAddressId,
-        problem_description: submission.problemDescription?.trim() || null,
-        photo_url: submission.photoUrl?.trim() || null,
-        estimated_min_price: finalMinPrice,
-        estimated_max_price: finalMaxPrice,
-        payment_method: 'cash_on_service',
-        status: 'requested'
-      };
-      const { error: reqErr } = await supabase
-        .from('service_requests')
-        .insert(requestPayload);
-
-      if (reqErr) {
-        console.error('[submit_service_request] Direct service request insert error:', reqErr);
-        supabaseErrorMsg = reqErr.message;
-      } else {
-        directInsertSucceeded = true;
-        supabaseErrorMsg = null;
-
-        // 4. Insert status history
-        await supabase
-          .from('request_status_history')
-          .insert({
-            request_id: finalRequestId,
-            status: 'requested'
-          });
-      }
-    } catch (directErr: any) {
-      console.error('[submit_service_request] Direct insert flow exception:', directErr);
-      supabaseErrorMsg = directErr?.message || 'Direct insert exception';
-    }
-  }
-
-  const persistedToSupabase = rpcSucceeded || directInsertSucceeded;
-
-  if (!persistedToSupabase) {
-    console.error('[submit_service_request] CRITICAL: Service request was NOT persisted to Supabase database. Reason:', supabaseErrorMsg);
+    console.error('[create_service_request] Invocation exception:', err);
     return {
       success: false,
       request: null as any,
-      supabaseError: supabaseErrorMsg || 'Database submission failed. The service request was not persisted to Supabase.'
+      supabaseError: err?.message || 'Unexpected network error submitting service request.'
     };
   }
-
-  // Construct standardized client-side request object
-  const clientRequest: CustomerServiceRequest = {
-    id: finalRequestId,
-    customerId: finalCustomerId,
-    customerName: cleanName,
-    customerPhone: cleanPhone,
-    serviceOptionId: serviceOptionUuid,
-    serviceOptionName: submission.serviceOptionName,
-    categoryName: submission.categoryName || 'Home Service',
-    addressId: finalAddressId,
-    address: cleanAddress,
-    locality: cleanLocality || cleanCity || undefined,
-    problemDescription: submission.problemDescription,
-    photoUrl: submission.photoUrl,
-    estimatedMinPrice: finalMinPrice,
-    estimatedMaxPrice: finalMaxPrice,
-    paymentMethod: 'cash_on_service',
-    status: 'requested',
-    createdAt: now
-  };
-
-  // Only store locally once successfully persisted in Supabase database
-  storeRequestLocally(clientRequest);
-
-  return {
-    success: true,
-    request: clientRequest,
-    supabaseError: null
-  };
 }
 
 /**
+ * 2a. Fetch Service Request Identity (Authoritative Booking Identity Contract)
+ * Invokes PostgreSQL RPC `get_service_request_identity` with request UUID and customer phone.
+ * Verifies request ownership server-side and returns only request_id and booking_code.
+ * Never exposes technician contacts, commission, or admin notes.
+ */
+export async function fetchServiceRequestIdentity(
+  requestId: string,
+  customerPhone: string
+): Promise<{
+  success: boolean;
+  identity: ServiceRequestIdentity | null;
+  error: string | null;
+}> {
+  if (!requestId?.trim() || !customerPhone?.trim()) {
+    return {
+      success: false,
+      identity: null,
+      error: 'Request ID and customer phone are required to retrieve booking identity.'
+    };
+  }
+
+  if (!isSupabaseConfigured || !supabase) {
+    return {
+      success: false,
+      identity: null,
+      error: 'Database connection is not configured.'
+    };
+  }
+
+  let cleanPhone = customerPhone.replace(/[^0-9]/g, '');
+  if (cleanPhone.startsWith('91') && cleanPhone.length === 12) {
+    cleanPhone = cleanPhone.substring(2);
+  } else if (cleanPhone.startsWith('0') && cleanPhone.length === 11) {
+    cleanPhone = cleanPhone.substring(1);
+  }
+
+  const rpcParams: GetServiceRequestIdentityParams = {
+    p_request_id: requestId.trim(),
+    p_customer_phone: cleanPhone
+  };
+
+  console.log('[get_service_request_identity] Invoking RPC with params:', rpcParams);
+
+  try {
+    const { data, error } = await supabase.rpc('get_service_request_identity', rpcParams);
+
+    console.log('[get_service_request_identity] RPC response:', { data, error });
+
+    if (error) {
+      console.error('[get_service_request_identity] RPC error:', error);
+      return {
+        success: false,
+        identity: null,
+        error: error.message || 'Failed to verify booking identity.'
+      };
+    }
+
+    if (!data || !Array.isArray(data) || data.length === 0) {
+      return {
+        success: false,
+        identity: null,
+        error: 'Booking identity not found or customer phone does not match request record.'
+      };
+    }
+
+    const row = data[0] as ServiceRequestIdentity;
+    if (!row.booking_code) {
+      return {
+        success: false,
+        identity: null,
+        error: 'Authoritative booking code was not returned by database.'
+      };
+    }
+
+    return {
+      success: true,
+      identity: row,
+      error: null
+    };
+  } catch (err: any) {
+    console.error('[get_service_request_identity] Invocation exception:', err);
+    return {
+      success: false,
+      identity: null,
+      error: err?.message || 'Network error verifying booking identity.'
+    };
+  }
+}
+
+/**
+ * 2b. Fetch Customer Request Status (Production Customer Status Contract)
+ * Invokes PostgreSQL RPC `get_service_request_status` with strict customer-safe parameters.
+ * Does NOT expose direct technician contact info, internal commission, or admin notes.
+ * Does NOT add polling or realtime in this step; prepares the typed service contract.
+ */
+export async function fetchCustomerRequestStatus(
+  bookingCode: string,
+  customerPhone: string
+): Promise<{
+  success: boolean;
+  statusDetail: CustomerRequestStatusDetail | null;
+  error: string | null;
+}> {
+  if (!bookingCode?.trim() || !customerPhone?.trim()) {
+    return {
+      success: false,
+      statusDetail: null,
+      error: 'Booking code and customer phone are required to check request status.'
+    };
+  }
+
+  if (!isSupabaseConfigured || !supabase) {
+    return {
+      success: false,
+      statusDetail: null,
+      error: 'Database connection is not configured.'
+    };
+  }
+
+  let cleanPhone = customerPhone.replace(/[^0-9]/g, '');
+  if (cleanPhone.startsWith('91') && cleanPhone.length === 12) {
+    cleanPhone = cleanPhone.substring(2);
+  } else if (cleanPhone.startsWith('0') && cleanPhone.length === 11) {
+    cleanPhone = cleanPhone.substring(1);
+  }
+
+  if (!cleanPhone || cleanPhone.length !== 10) {
+    return {
+      success: false,
+      statusDetail: null,
+      error: 'Please provide a valid 10-digit mobile number.'
+    };
+  }
+
+  const cleanBookingCode = bookingCode.trim().toUpperCase();
+  if (!cleanBookingCode) {
+    return {
+      success: false,
+      statusDetail: null,
+      error: 'Please provide a valid booking code.'
+    };
+  }
+
+  const rpcParams: GetServiceRequestStatusParams = {
+    p_booking_code: cleanBookingCode,
+    p_customer_phone: cleanPhone
+  };
+
+  try {
+    const { data, error } = await supabase.rpc('get_service_request_status', rpcParams);
+
+    if (error) {
+      console.error('[get_service_request_status] RPC error:', error);
+      return {
+        success: false,
+        statusDetail: null,
+        error: error.message || 'Failed to retrieve request status.'
+      };
+    }
+
+    if (!data || !Array.isArray(data) || data.length === 0) {
+      return {
+        success: false,
+        statusDetail: null,
+        error: 'Request not found or customer phone does not match booking.'
+      };
+    }
+
+    const row = data[0] as any;
+
+    // Validate that status belongs to production RequestStatus enum
+    if (!isValidRequestStatus(row.status)) {
+      return {
+        success: false,
+        statusDetail: null,
+        error: `Unexpected backend status: ${String(row.status)}`
+      };
+    }
+
+    const normalizedDetail: CustomerRequestStatusDetail = {
+      request_id: row.request_id,
+      booking_code: row.booking_code,
+      service_name: row.service_name,
+      status: row.status,
+      estimated_price: row.estimated_price !== null && row.estimated_price !== undefined ? Number(row.estimated_price) : null,
+      confirmed_price: row.confirmed_price !== null && row.confirmed_price !== undefined ? Number(row.confirmed_price) : null,
+      professional_name: row.professional_name || null,
+      professional_photo: row.professional_photo || row.professional_photo_url || null,
+      professional_photo_url: row.professional_photo_url || row.professional_photo || null,
+      professional_rating: row.professional_rating !== null && row.professional_rating !== undefined ? Number(row.professional_rating) : null,
+      professional_completed_jobs: row.professional_completed_jobs !== null && row.professional_completed_jobs !== undefined ? Number(row.professional_completed_jobs) : null,
+      estimated_arrival_at: row.estimated_arrival_at || null,
+      assigned_at: row.assigned_at || null,
+      created_at: row.created_at || row.request_created_at || '',
+      request_created_at: row.request_created_at || row.created_at || ''
+    };
+
+    return {
+      success: true,
+      statusDetail: normalizedDetail,
+      error: null
+    };
+  } catch (err: any) {
+    console.error('[get_service_request_status] Invocation exception:', err);
+    return {
+      success: false,
+      statusDetail: null,
+      error: err?.message || 'Network error retrieving request status.'
+    };
+  }
+}
+
+/**
+ * Backward compatibility alias for customer request submission.
+ */
+export const submitCustomerServiceRequest = submitServiceRequest;
+
+/**
  * 3. Fetch Customer Service Requests:
- * Strictly retrieves ONLY requests submitted by this customer/session.
- * Never executes an unbounded SELECT * against `service_requests`.
- * If the current browser has 0 local requests, returns empty [] immediately.
+ * Synchronizes locally-recorded customer requests with authoritative Supabase status RPC.
+ * Strictly queries status ONLY for requests owned by this customer using get_service_request_status.
+ * Never executes direct SELECT on service_requests or sensitive tables.
+ * Disables and replaces legacy get_my_service_requests RPC.
  */
 export async function fetchCustomerRequests(
   phone?: string
@@ -468,68 +635,136 @@ export async function fetchCustomerRequests(
     return { data: localList, error: null };
   }
 
-  // Filter only valid UUIDs submitted by this client
-  const targetIds = localList
-    .map((r) => r.id)
-    .filter((id) => isValidUuid(id));
-
-  if (targetIds.length === 0) {
-    return { data: localList, error: null };
-  }
-
   const rawPhone = phone || localList.find((r) => r.customerPhone)?.customerPhone || '';
-  let cleanPhone = rawPhone.replace(/[^0-9]/g, '');
-  if (cleanPhone.startsWith('91') && cleanPhone.length === 12) {
-    cleanPhone = cleanPhone.substring(2);
-  } else if (cleanPhone.startsWith('0') && cleanPhone.length === 11) {
-    cleanPhone = cleanPhone.substring(1);
-  }
-
-  // Mandatory phone requirement: without a valid phone, return locally stored records directly
-  if (!cleanPhone || !/^[6-9]\d{9}$/.test(cleanPhone)) {
-    return { data: localList, error: null };
+  let defaultCleanPhone = rawPhone.replace(/[^0-9]/g, '');
+  if (defaultCleanPhone.startsWith('91') && defaultCleanPhone.length === 12) {
+    defaultCleanPhone = defaultCleanPhone.substring(2);
+  } else if (defaultCleanPhone.startsWith('0') && defaultCleanPhone.length === 11) {
+    defaultCleanPhone = defaultCleanPhone.substring(1);
   }
 
   try {
-    // 1. Primary: Use secure RPC function get_my_service_requests
-    // Passes specific request IDs and validated phone for mutual verification
-    const { data: rpcRows, error: rpcError } = await supabase.rpc('get_my_service_requests', {
-      p_request_ids: targetIds,
-      p_phone: cleanPhone
-    });
-
-    if (!rpcError && Array.isArray(rpcRows)) {
-      const updatedList: CustomerServiceRequest[] = localList.map((local) => {
-        const match = rpcRows.find((r: any) => r.id === local.id);
-        if (match) {
-          return {
-            ...local,
-            status: match.status || local.status,
-            serviceOptionId: match.service_option_id || local.serviceOptionId,
-            serviceOptionName: match.service_option_name || local.serviceOptionName,
-            categoryName: match.category_name || local.categoryName,
-            estimatedMinPrice: match.estimated_min_price !== null && match.estimated_min_price !== undefined
-              ? Number(match.estimated_min_price)
-              : local.estimatedMinPrice,
-            estimatedMaxPrice: match.estimated_max_price !== null && match.estimated_max_price !== undefined
-              ? Number(match.estimated_max_price)
-              : local.estimatedMaxPrice
-          };
+    // Refresh each locally stored request that has a genuine bookingCode and phone
+    const updatedList: CustomerServiceRequest[] = await Promise.all(
+      localList.map(async (local) => {
+        const reqPhone = local.customerPhone || defaultCleanPhone;
+        if (local.bookingCode && reqPhone) {
+          const statusRes = await fetchCustomerRequestStatus(local.bookingCode, reqPhone);
+          if (statusRes.success && statusRes.statusDetail) {
+            const detail = statusRes.statusDetail;
+            return {
+              ...local,
+              requestId: detail.request_id || local.id,
+              serviceName: detail.service_name || local.serviceOptionName,
+              status: detail.status,
+              estimatedPrice: detail.estimated_price,
+              confirmedPrice: detail.confirmed_price,
+              professionalName: detail.professional_name,
+              professionalPhoto: detail.professional_photo || detail.professional_photo_url || null,
+              professionalRating: detail.professional_rating,
+              professionalCompletedJobs: detail.professional_completed_jobs,
+              estimatedArrivalAt: detail.estimated_arrival_at,
+              assignedAt: detail.assigned_at,
+              createdAt: detail.created_at || (detail as any).request_created_at || local.createdAt
+            };
+          }
         }
         return local;
-      });
+      })
+    );
 
-      updateStoredRequestsLocally(updatedList);
-      return { data: updatedList, error: null };
-    }
-
-    if (rpcError) {
-      console.warn('RPC get_my_service_requests notice:', rpcError.message);
-    }
-
-    return { data: localList, error: null };
+    // Save refreshed state in local storage cache
+    updateStoredRequestsLocally(updatedList);
+    return { data: updatedList, error: null };
   } catch (err: any) {
-    console.warn('Exception fetching customer requests (showing local):', err?.message);
+    console.warn('Exception synchronizing customer requests status (showing cached):', err?.message);
     return { data: localList, error: null };
   }
 }
+
+/**
+ * 4. Refresh a single customer service request by bookingCode & phone.
+ * Synchronizes with Supabase get_service_request_status, updates local storage cache,
+ * and returns the authoritative request representation.
+ */
+export async function refreshCustomerRequest(
+  bookingCode: string,
+  customerPhone: string
+): Promise<{
+  success: boolean;
+  request: CustomerServiceRequest | null;
+  error: string | null;
+}> {
+  const statusRes = await fetchCustomerRequestStatus(bookingCode, customerPhone);
+  if (!statusRes.success || !statusRes.statusDetail) {
+    return {
+      success: false,
+      request: null,
+      error: statusRes.error || 'Unable to refresh request status. Please try again.'
+    };
+  }
+
+  const detail = statusRes.statusDetail;
+  const localList = getStoredRequests();
+  let updatedRequest: CustomerServiceRequest | null = null;
+
+  const updatedList = localList.map((local) => {
+    if (
+      local.bookingCode === bookingCode ||
+      local.id === detail.request_id ||
+      local.requestId === detail.request_id
+    ) {
+      updatedRequest = {
+        ...local,
+        requestId: detail.request_id || local.requestId || local.id,
+        bookingCode: detail.booking_code || local.bookingCode,
+        serviceName: detail.service_name || local.serviceName || local.serviceOptionName,
+        status: detail.status,
+        estimatedPrice: detail.estimated_price,
+        confirmedPrice: detail.confirmed_price,
+        professionalName: detail.professional_name,
+        professionalPhoto: detail.professional_photo || detail.professional_photo_url || null,
+        professionalRating: detail.professional_rating,
+        professionalCompletedJobs: detail.professional_completed_jobs,
+        estimatedArrivalAt: detail.estimated_arrival_at,
+        assignedAt: detail.assigned_at,
+        createdAt: detail.created_at || (detail as any).request_created_at || local.createdAt
+      };
+      return updatedRequest;
+    }
+    return local;
+  });
+
+  if (updatedRequest) {
+    updateStoredRequestsLocally(updatedList);
+  } else {
+    updatedRequest = {
+      id: detail.request_id,
+      requestId: detail.request_id,
+      bookingCode: detail.booking_code,
+      serviceName: detail.service_name,
+      serviceOptionName: detail.service_name,
+      customerPhone,
+      status: detail.status,
+      estimatedPrice: detail.estimated_price,
+      confirmedPrice: detail.confirmed_price,
+      professionalName: detail.professional_name,
+      professionalPhoto: detail.professional_photo || detail.professional_photo_url || null,
+      professionalRating: detail.professional_rating,
+      professionalCompletedJobs: detail.professional_completed_jobs,
+      estimatedArrivalAt: detail.estimated_arrival_at,
+      assignedAt: detail.assigned_at,
+      createdAt: detail.created_at || (detail as any).request_created_at || new Date().toISOString()
+    };
+    storeRequestLocally(updatedRequest);
+  }
+
+  return {
+    success: true,
+    request: updatedRequest,
+    error: null
+  };
+}
+
+export { getRequestStatusDisplay, formatEtaDisplay } from '../types';
+
