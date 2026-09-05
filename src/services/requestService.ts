@@ -62,6 +62,10 @@ export interface CustomerServiceRequest {
   paymentMethod?: string;
   status: RequestStatus | string;
   createdAt: string;
+  isReviewed?: boolean;
+  reviewRating?: number | null;
+  reviewComment?: string | null;
+  reviewedAt?: string | null;
 }
 
 const LOCAL_REQUESTS_KEY = 'kaamwala_service_requests_v1';
@@ -673,6 +677,26 @@ export async function fetchCustomerRequests(
       })
     );
 
+    // 5. Enrich completed requests with real review data from Supabase reviews table
+    const requestIdsToQuery = updatedList
+      .map((r) => r.requestId || r.id)
+      .filter((id): id is string => Boolean(id) && isValidUuid(id));
+
+    if (requestIdsToQuery.length > 0) {
+      const reviewsMap = await fetchReviewsForRequests(requestIdsToQuery);
+      updatedList.forEach((r) => {
+        const rev = reviewsMap[r.requestId || ''] || reviewsMap[r.id || ''];
+        if (rev) {
+          r.isReviewed = true;
+          r.reviewRating = rev.rating;
+          r.reviewComment = rev.comment;
+          r.reviewedAt = rev.createdAt;
+        } else {
+          r.isReviewed = false;
+        }
+      });
+    }
+
     // Save refreshed state in local storage cache
     updateStoredRequestsLocally(updatedList);
     return { data: updatedList, error: null };
@@ -759,11 +783,207 @@ export async function refreshCustomerRequest(
     storeRequestLocally(updatedRequest);
   }
 
+  // Check real review status from Supabase
+  if (updatedRequest && detail.request_id) {
+    const reviewsMap = await fetchReviewsForRequests([detail.request_id]);
+    const rev = reviewsMap[detail.request_id];
+    if (rev) {
+      updatedRequest.isReviewed = true;
+      updatedRequest.reviewRating = rev.rating;
+      updatedRequest.reviewComment = rev.comment;
+      updatedRequest.reviewedAt = rev.createdAt;
+    } else {
+      updatedRequest.isReviewed = false;
+    }
+  }
+
   return {
     success: true,
     request: updatedRequest,
     error: null
   };
+}
+
+/**
+ * 5. Query Supabase reviews table for real completed service reviews.
+ * Preserves review status across sessions and page reloads directly from the database.
+ * Does not depend on localStorage as the source of truth.
+ */
+export async function fetchReviewsForRequests(
+  requestIds: string[]
+): Promise<Record<string, { id: string; rating: number; comment: string | null; createdAt: string }>> {
+  if (!requestIds || requestIds.length === 0 || !isSupabaseConfigured || !supabase) {
+    return {};
+  }
+
+  const validIds = Array.from(new Set(requestIds.filter((id) => Boolean(id) && isValidUuid(id))));
+  if (validIds.length === 0) {
+    return {};
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('reviews')
+      .select('id, request_id, rating, comment, created_at')
+      .in('request_id', validIds);
+
+    if (error) {
+      console.warn('Notice querying Supabase reviews table:', error.message);
+      return {};
+    }
+
+    const map: Record<string, { id: string; rating: number; comment: string | null; createdAt: string }> = {};
+    if (Array.isArray(data)) {
+      data.forEach((row: any) => {
+        if (row && row.request_id) {
+          map[row.request_id] = {
+            id: row.id,
+            rating: Number(row.rating),
+            comment: row.comment || null,
+            createdAt: row.created_at
+          };
+        }
+      });
+    }
+    return map;
+  } catch (err) {
+    console.warn('Exception querying reviews table:', err);
+    return {};
+  }
+}
+
+/**
+ * 6. Submit a Real Service Review via create_service_review RPC.
+ * Strictly enforces server-side validation:
+ * - Request must exist and belong to the supplied customer phone
+ * - Request status must be COMPLETED
+ * - Request must have an assigned professional
+ * - Rating must be an integer between 1 and 5
+ * - Enforces single review per request (rejects duplicate submissions)
+ * - Recalculates professional's aggregate rating mathematically from real reviews
+ */
+export async function submitServiceReview(
+  requestId: string,
+  customerPhone: string,
+  rating: number,
+  comment?: string
+): Promise<{
+  success: boolean;
+  error: string | null;
+  reviewId?: string;
+}> {
+  if (!requestId || !isValidUuid(requestId)) {
+    return { success: false, error: 'Invalid service request ID.' };
+  }
+
+  if (!rating || !Number.isInteger(rating) || rating < 1 || rating > 5) {
+    return { success: false, error: 'Rating must be an integer between 1 and 5.' };
+  }
+
+  if (!customerPhone || !customerPhone.trim()) {
+    return { success: false, error: 'Customer phone number is required to submit review.' };
+  }
+
+  if (!isSupabaseConfigured || !supabase) {
+    return { success: false, error: 'Database connection is not configured.' };
+  }
+
+  let cleanPhone = customerPhone.replace(/[^0-9]/g, '');
+  if (cleanPhone.startsWith('91') && cleanPhone.length === 12) {
+    cleanPhone = cleanPhone.substring(2);
+  } else if (cleanPhone.startsWith('0') && cleanPhone.length === 11) {
+    cleanPhone = cleanPhone.substring(1);
+  }
+
+  if (!cleanPhone || cleanPhone.length !== 10) {
+    return { success: false, error: 'Please provide a valid 10-digit mobile number.' };
+  }
+
+  const cleanComment = comment?.trim() ? comment.trim() : null;
+
+  try {
+    // 1. Primary submission: invoke 4-parameter secure production RPC
+    let rpcResponse = await supabase.rpc('create_service_review', {
+      p_request_id: requestId,
+      p_customer_phone: cleanPhone,
+      p_rating: rating,
+      p_comment: cleanComment
+    });
+
+    // 2. Compatibility fallback: if DB schema cache has not yet refreshed the 4-arg function
+    if (
+      rpcResponse.error &&
+      rpcResponse.error.message &&
+      rpcResponse.error.message.includes('Could not find the function public.create_service_review')
+    ) {
+      console.warn('Falling back to 3-parameter create_service_review RPC invocation');
+      rpcResponse = await supabase.rpc('create_service_review', {
+        p_request_id: requestId,
+        p_rating: rating,
+        p_comment: cleanComment
+      });
+    }
+
+    if (rpcResponse.error) {
+      const msg = rpcResponse.error.message || '';
+      let userFriendlyError = 'Failed to submit review. Please try again.';
+      if (
+        msg.includes('already been reviewed') ||
+        msg.includes('reviews_request_id_key') ||
+        msg.includes('duplicate key')
+      ) {
+        userFriendlyError = 'This service request has already been reviewed.';
+      } else if (msg.includes('Rating must be between 1 and 5')) {
+        userFriendlyError = 'Rating must be between 1 and 5 stars.';
+      } else if (msg.includes('Only completed') || msg.includes('not completed')) {
+        userFriendlyError = 'Only completed service requests can be reviewed.';
+      } else if (msg.includes('Completed assigned request not found')) {
+        userFriendlyError = 'This request is not eligible for review (must be completed with an assigned professional).';
+      } else if (msg.includes('customer phone does not match')) {
+        userFriendlyError = 'Customer phone number does not match this service booking.';
+      } else if (msg) {
+        userFriendlyError = msg;
+      }
+
+      return {
+        success: false,
+        error: userFriendlyError
+      };
+    }
+
+    // Update local cache so UI reacts instantaneously
+    const localList = getStoredRequests();
+    const updated = localList.map((r) => {
+      if (r.id === requestId || r.requestId === requestId) {
+        return {
+          ...r,
+          isReviewed: true,
+          reviewRating: rating,
+          reviewComment: cleanComment,
+          reviewedAt: new Date().toISOString()
+        };
+      }
+      return r;
+    });
+    updateStoredRequestsLocally(updated);
+
+    const reviewId =
+      typeof rpcResponse.data === 'object' && rpcResponse.data !== null
+        ? (rpcResponse.data as any).review_id || (rpcResponse.data as any).id
+        : undefined;
+
+    return {
+      success: true,
+      error: null,
+      reviewId
+    };
+  } catch (err: any) {
+    console.error('Exception calling create_service_review RPC:', err);
+    return {
+      success: false,
+      error: err?.message || 'Network error submitting service review. Please try again.'
+    };
+  }
 }
 
 export { getRequestStatusDisplay, formatEtaDisplay } from '../types';

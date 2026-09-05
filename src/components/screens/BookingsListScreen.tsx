@@ -11,12 +11,14 @@ import {
   User,
   Star,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  CheckCircle
 } from 'lucide-react';
 import {
   CustomerServiceRequest,
   fetchCustomerRequests,
   refreshCustomerRequest,
+  submitServiceReview,
   getRequestStatusDisplay,
   formatEtaDisplay
 } from '../../services/requestService';
@@ -36,6 +38,110 @@ export const BookingsListScreen: React.FC<BookingsListScreenProps> = ({
   const [expandedRequestId, setExpandedRequestId] = useState<string | null>(null);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
   const [cardNotices, setCardNotices] = useState<Record<string, string>>({});
+
+  // Review flow states (Strictly production-backed by Supabase RPC)
+  const [openReviewId, setOpenReviewId] = useState<string | null>(null);
+  const [reviewRatings, setReviewRatings] = useState<Record<string, number>>({});
+  const [reviewComments, setReviewComments] = useState<Record<string, string>>({});
+  const [submittingReviewId, setSubmittingReviewId] = useState<string | null>(null);
+  const [reviewErrors, setReviewErrors] = useState<Record<string, string | null>>({});
+
+  const handleOpenReview = (id: string) => {
+    setOpenReviewId(id);
+    setReviewRatings((prev) => ({ ...prev, [id]: prev[id] || 5 }));
+    setReviewErrors((prev) => ({ ...prev, [id]: null }));
+  };
+
+  const handleCloseReview = (id: string) => {
+    if (openReviewId === id) {
+      setOpenReviewId(null);
+    }
+  };
+
+  const handleSetRating = (id: string, val: number) => {
+    setReviewRatings((prev) => ({ ...prev, [id]: val }));
+    setReviewErrors((prev) => ({ ...prev, [id]: null }));
+  };
+
+  const handleSetComment = (id: string, text: string) => {
+    setReviewComments((prev) => ({ ...prev, [id]: text }));
+  };
+
+  const handleSubmitReview = async (req: CustomerServiceRequest) => {
+    const rating = reviewRatings[req.id] || 0;
+    if (!rating || rating < 1 || rating > 5) {
+      setReviewErrors((prev) => ({
+        ...prev,
+        [req.id]: 'Please select a rating between 1 and 5 stars.'
+      }));
+      return;
+    }
+
+    const requestId = req.requestId || req.id;
+    const phone = req.customerPhone || customerPhone;
+    if (!phone) {
+      setReviewErrors((prev) => ({
+        ...prev,
+        [req.id]: 'Customer phone number is required to submit a review.'
+      }));
+      return;
+    }
+
+    setSubmittingReviewId(req.id);
+    setReviewErrors((prev) => ({ ...prev, [req.id]: null }));
+
+    try {
+      const comment = reviewComments[req.id] || '';
+      const res = await submitServiceReview(requestId, phone, rating, comment);
+
+      if (res.success) {
+        // Update request with real reviewed state in component memory
+        setRequests((prev) =>
+          prev.map((r) =>
+            r.id === req.id || r.requestId === requestId
+              ? {
+                  ...r,
+                  isReviewed: true,
+                  reviewRating: rating,
+                  reviewComment: comment.trim() || null,
+                  reviewedAt: new Date().toISOString()
+                }
+              : r
+          )
+        );
+        setOpenReviewId(null);
+      } else {
+        setReviewErrors((prev) => ({
+          ...prev,
+          [req.id]: res.error || 'Failed to submit review. Please try again.'
+        }));
+      }
+    } catch (err: any) {
+      setReviewErrors((prev) => ({
+        ...prev,
+        [req.id]: err?.message || 'Network error submitting review. Please try again.'
+      }));
+    } finally {
+      setSubmittingReviewId(null);
+    }
+  };
+
+  const getRatingFeedbackLabel = (r: number) => {
+    switch (r) {
+      case 5:
+        return '⭐ 5/5 — Excellent Service';
+      case 4:
+        return '⭐ 4/5 — Very Good';
+      case 3:
+        return '⭐ 3/5 — Good';
+      case 2:
+        return '⭐ 2/5 — Fair';
+      case 1:
+        return '⭐ 1/5 — Poor';
+      default:
+        return 'Select a rating';
+    }
+  };
 
   const loadRequests = useCallback(async () => {
     setIsLoading(true);
@@ -358,6 +464,176 @@ export const BookingsListScreen: React.FC<BookingsListScreenProps> = ({
                   <div className="mt-2 pt-2 border-t border-gray-100 flex items-center gap-1.5 text-[11px] text-gray-500">
                     <Clock className="w-3 h-3 text-gray-400 shrink-0" />
                     <span>Professional will be assigned by KaamWala</span>
+                  </div>
+                )}
+
+                {/* Production Rating & Review Flow (Eligible ONLY when COMPLETED with assigned professional) */}
+                {req.status === 'COMPLETED' && req.professionalName && (
+                  <div className="mt-2.5 pt-2.5 border-t border-gray-100">
+                    {req.isReviewed ? (
+                      /* State 1: Already Reviewed from Supabase reviews table */
+                      <div className="p-3 bg-emerald-50/60 border border-emerald-200/60 rounded-xl">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <CheckCircle className="w-4 h-4 text-[#075B43] shrink-0" />
+                            <span className="text-xs font-bold text-[#075B43]">Reviewed</span>
+                          </div>
+                          {req.reviewRating !== undefined && req.reviewRating !== null && (
+                            <div className="flex items-center gap-1 bg-white px-2 py-0.5 rounded-md border border-emerald-100">
+                              <div className="flex items-center gap-0.5">
+                                {[1, 2, 3, 4, 5].map((s) => (
+                                  <Star
+                                    key={s}
+                                    className={`w-3 h-3 ${
+                                      s <= (req.reviewRating || 0)
+                                        ? 'fill-[#F5B51B] text-[#F5B51B]'
+                                        : 'fill-none text-gray-300'
+                                    }`}
+                                  />
+                                ))}
+                              </div>
+                              <span className="text-xs font-bold text-[#111817] ml-0.5">
+                                {req.reviewRating}.0
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
+                        {req.reviewComment && (
+                          <p className="mt-2 text-xs text-gray-700 italic bg-white p-2 rounded-lg border border-emerald-100/60 leading-relaxed">
+                            "{req.reviewComment}"
+                          </p>
+                        )}
+
+                        {req.reviewedAt && (
+                          <div className="mt-1 text-[10px] text-gray-400 text-right">
+                            Reviewed on {formatDate(req.reviewedAt)}
+                          </div>
+                        )}
+                      </div>
+                    ) : openReviewId === req.id ? (
+                      /* State 2: Active Review Input Form */
+                      <div className="p-3.5 bg-gray-50/90 border border-emerald-200 rounded-xl animate-in fade-in duration-150">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-xs font-bold text-[#111817] flex items-center gap-1.5">
+                            <Star className="w-3.5 h-3.5 fill-[#075B43] text-[#075B43]" />
+                            <span>Rate & Review Service</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleCloseReview(req.id)}
+                            disabled={submittingReviewId === req.id}
+                            className="text-gray-400 hover:text-gray-600 text-xs cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+
+                        <p className="text-[11px] text-gray-500 mb-2.5">
+                          How was your service experience with <strong>{req.professionalName}</strong>?
+                        </p>
+
+                        {/* 1-5 Star Interactive Selector */}
+                        <div className="flex items-center justify-center gap-2 py-2 mb-1.5 bg-white rounded-lg border border-gray-200/80">
+                          {[1, 2, 3, 4, 5].map((star) => {
+                            const currentRating = reviewRatings[req.id] || 0;
+                            const filled = star <= currentRating;
+                            return (
+                              <button
+                                key={star}
+                                type="button"
+                                id={`star-rating-${req.id}-${star}`}
+                                onClick={() => handleSetRating(req.id, star)}
+                                disabled={submittingReviewId === req.id}
+                                className="p-1 focus:outline-none transform hover:scale-115 active:scale-95 transition-transform cursor-pointer"
+                                aria-label={`${star} star`}
+                              >
+                                <Star
+                                  className={`w-6 h-6 ${
+                                    filled
+                                      ? 'fill-[#F5B51B] text-[#F5B51B]'
+                                      : 'fill-none text-gray-300 hover:text-amber-300'
+                                  }`}
+                                />
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        <div className="text-center text-[11px] font-semibold text-gray-600 mb-2.5">
+                          {getRatingFeedbackLabel(reviewRatings[req.id] || 0)}
+                        </div>
+
+                        {/* Written Feedback Textarea */}
+                        <div className="mb-2">
+                          <label
+                            htmlFor={`review-comment-${req.id}`}
+                            className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1"
+                          >
+                            Feedback (Optional)
+                          </label>
+                          <textarea
+                            id={`review-comment-${req.id}`}
+                            value={reviewComments[req.id] || ''}
+                            onChange={(e) => handleSetComment(req.id, e.target.value)}
+                            disabled={submittingReviewId === req.id}
+                            placeholder="Share your experience (punctuality, work quality, professionalism)..."
+                            rows={3}
+                            maxLength={500}
+                            className="w-full p-2.5 bg-white border border-gray-200 rounded-lg text-xs text-[#111817] focus:outline-none focus:border-[#075B43] resize-none shadow-2xs placeholder:text-gray-400"
+                          />
+                        </div>
+
+                        {/* Error Notice */}
+                        {reviewErrors[req.id] && (
+                          <div className="mb-2.5 p-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-start gap-1.5">
+                            <AlertCircle className="w-3.5 h-3.5 text-red-600 shrink-0 mt-0.5" />
+                            <span className="flex-1">{reviewErrors[req.id]}</span>
+                          </div>
+                        )}
+
+                        {/* Submit Action */}
+                        <div className="flex items-center justify-end gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => handleCloseReview(req.id)}
+                            disabled={submittingReviewId === req.id}
+                            className="px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-200 rounded-lg transition-colors cursor-pointer font-medium"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            id={`submit-review-btn-${req.id}`}
+                            onClick={() => handleSubmitReview(req)}
+                            disabled={submittingReviewId === req.id || !reviewRatings[req.id]}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#075B43] hover:bg-[#064635] disabled:bg-gray-300 text-white font-bold text-xs rounded-lg transition-all shadow-xs cursor-pointer disabled:cursor-not-allowed"
+                          >
+                            {submittingReviewId === req.id && (
+                              <RefreshCw className="w-3 h-3 animate-spin" />
+                            )}
+                            <span>{submittingReviewId === req.id ? 'Submitting...' : 'Submit Review'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* State 3: Eligible CTA button */
+                      <div className="flex items-center justify-between p-2.5 bg-emerald-50/50 border border-emerald-100 rounded-xl">
+                        <div className="text-xs text-gray-700">
+                          <span className="font-semibold text-[#111817]">Work Completed.</span>{' '}
+                          <span className="text-gray-500">Rate your service experience</span>
+                        </div>
+                        <button
+                          type="button"
+                          id={`rate-review-cta-${req.id}`}
+                          onClick={() => handleOpenReview(req.id)}
+                          className="inline-flex items-center gap-1.5 py-1.5 px-3 bg-[#075B43] hover:bg-[#064635] active:scale-95 text-white text-xs font-bold rounded-lg transition-all shadow-2xs shrink-0 cursor-pointer"
+                        >
+                          <Star className="w-3.5 h-3.5 fill-[#F5B51B] text-[#F5B51B]" />
+                          <span>Rate & Review</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 

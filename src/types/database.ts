@@ -213,9 +213,11 @@ export interface Review {
   customer_id?: string | null;
   professional_id?: string | null;
   rating: number;
+  comment?: string | null;
   review_text?: string | null;
   review_tags?: string[] | null;
   created_at: string;
+  updated_at?: string;
 }
 
 // ============================================================================
@@ -443,7 +445,9 @@ export interface CustomerRequestStatusDetail {
  */
 export interface CreateServiceReviewParams {
   p_request_id: string;
+  p_customer_phone: string;
   p_rating: number;
+  p_comment?: string | null;
   p_review_text?: string | null;
   p_review_tags?: string[] | null;
 }

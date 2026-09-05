@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Star, FileText, CheckCircle } from 'lucide-react';
+import { Star, FileText, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import { Booking } from '../../types';
 import { CompletedWorkerGraphic } from '../common/Illustrations';
 import { InvoiceModal } from '../common/InvoiceModal';
+import { submitServiceReview } from '../../services/requestService';
 
 interface BookingCompletedScreenProps {
   booking: Booking;
@@ -22,6 +23,8 @@ export const BookingCompletedScreen: React.FC<BookingCompletedScreenProps> = ({
     'Professional behaviour',
     'On-time arrival'
   ]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [showInvoice, setShowInvoice] = useState(false);
 
@@ -40,12 +43,40 @@ export const BookingCompletedScreen: React.FC<BookingCompletedScreenProps> = ({
     }
   };
 
-  const handleSubmit = () => {
-    onSubmitReview(rating, comment, selectedTags);
-    setSubmitted(true);
-    setTimeout(() => {
-      onHome();
-    }, 1500);
+  const handleSubmit = async () => {
+    if (rating < 1 || rating > 5) {
+      setSubmitError('Please select a rating between 1 and 5 stars.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    try {
+      if (booking.id && booking.customerPhone) {
+        const res = await submitServiceReview(
+          booking.id,
+          booking.customerPhone,
+          rating,
+          comment
+        );
+        if (!res.success) {
+          setSubmitError(res.error || 'Failed to submit review.');
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
+      onSubmitReview(rating, comment, selectedTags);
+      setSubmitted(true);
+      setTimeout(() => {
+        onHome();
+      }, 1500);
+    } catch (err: any) {
+      setSubmitError(err?.message || 'Network error submitting review.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -120,6 +151,14 @@ export const BookingCompletedScreen: React.FC<BookingCompletedScreenProps> = ({
         />
       </div>
 
+      {/* Error banner if any */}
+      {submitError && (
+        <div className="mb-4 p-2.5 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+          <span>{submitError}</span>
+        </div>
+      )}
+
       {submitted ? (
         <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-center text-xs font-bold flex items-center justify-center gap-2">
           <CheckCircle className="w-4 h-4 text-emerald-600" />
@@ -131,9 +170,11 @@ export const BookingCompletedScreen: React.FC<BookingCompletedScreenProps> = ({
           <button
             id="submit-review-btn"
             onClick={handleSubmit}
-            className="w-full py-3.5 px-4 bg-[#075B43] hover:bg-[#064635] active:scale-[0.99] text-white font-bold text-sm rounded-xl transition-all shadow-xs"
+            disabled={isSubmitting}
+            className="w-full py-3.5 px-4 bg-[#075B43] hover:bg-[#064635] disabled:bg-gray-300 active:scale-[0.99] text-white font-bold text-sm rounded-xl transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
           >
-            Submit Review
+            {isSubmitting && <RefreshCw className="w-4 h-4 animate-spin" />}
+            <span>{isSubmitting ? 'Submitting Review...' : 'Submit Review'}</span>
           </button>
 
           {/* View Invoice Button */}
